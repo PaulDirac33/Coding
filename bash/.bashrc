@@ -1,0 +1,17 @@
+PS1="\[\033[1;38;5;39m\]Mac-Mini-Riccardo \[\033[0m\]\$(if [ \$PWD = \$HOME ]; then echo '~'; else basename \$PWD; fi)  "
+
+#PS1="\[\033[1;34m\]Mac-Mini-Riccardo \[\033[0m\]\w \$ "
+alias cl="clear"
+alias so="source"
+alias op="open"
+alias ls="ls -G"
+alias la="ls -G -a"
+alias ll="ls -lh -G"
+alias lm="ls -lh -G -a"
+
+alias cashlog="cd /Users/riccardo/Documents/log"
+alias gnutest="op ~/test_gnuplot.png"
+alias esp="cd /Users/riccardo/Library/CloudStorage/OneDrive-Personale/Esperimenti/MOSFET"
+alias mag="cd /Users/riccardo/Documents/Università/Magistrale"
+alias lab="cd /Users/riccardo/Documents/Università/Cirillo/pdf"
+alias ub="cd /Users/riccardo/Library/Mobile\ Documents/com~apple~CloudDocs/MacBuntu"

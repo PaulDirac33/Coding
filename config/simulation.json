@@ -1,0 +1,20 @@
+{
+  "File": {
+    "path": "/Users/riccardo/github/Coding/python",
+    "extension": "dat"
+  },
+  "Simulation": {
+    "N": "1000000",
+    "bin_size": "0.001",
+    "start": "0",
+    "stop": "1",
+    "dev_std": "1.9562345691990e-01",
+    "mean_value": "4.9999999094790e-01",
+    "param1": "0.9121388148531611",
+    "param2": "0",
+    "param3": "0",
+    "f(x)": "(2/(b - a))*(np.sin(np.pi*(x - a)/(b - a)))**2",
+    "unused_f(x)": "np.exp(-(x-m)**2/(2*s**2))/(s*np.sqrt(2*np.pi))",
+    "unused_f(x)": "(1/p1)*np.exp(-x/2)*(np.sin(np.pi*x))**2"
+  }
+}

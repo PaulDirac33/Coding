@@ -1,0 +1,16 @@
+{
+  "File": {
+    "path_in": "/Users/riccardo/Documents/log",
+    "path_out": "/Users/riccardo/Desktop",
+    "extension": "dat"
+  },
+  "Extraction": {
+    "shift": "2",
+    "comments": "no",
+    "column_comments": "0",
+    "units": "no",
+    "start_line": "1",
+    "column_x": "3",
+    "column_y": "4"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "File": {
+    "path_in": "/Users/riccardo/Desktop",
+    "path_out": "/Users/riccardo/Desktop",
+    "extension": "dat",
+    "units": "no"
+  },
+  "Extraction": {
+    "bin_size": "1",
+    "start": "0",
+    "stop": "20",
+    "column_y": "0"
+  }
+}
