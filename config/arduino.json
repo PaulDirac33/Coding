@@ -7,8 +7,7 @@
   "Arduino": {
     "speed": "9600",
     "port_1": "/dev/cu.usbmodem2101",
-    "port_2": "/dev/cu.usbmodem2101",
-    "sleep": "1",
-    "stop": "n"
+    "port_2": "/dev/cu.usbmodem2102",
+    "sleep": "1"
   }
 }
