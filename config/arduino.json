@@ -1,14 +1,14 @@
 {
   "File": {
-    "path": "../data",
+    "path": "../../data",
     "name": "arduino",
     "extension": "dat"
   },
   "Arduino": {
     "speed": "9600",
     "port_1": "/dev/cu.usbmodem2101",
-    "port_2": "/dev/cu.usbmodem2101",
-    "sleep": "1",
-    "stop": "n"
+    "port_2": "/dev/cu.usbmodem142301",
+    "port_3": "/dev/ttyACM0",
+    "sleep": "1"
   }
 }

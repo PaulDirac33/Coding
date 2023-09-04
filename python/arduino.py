@@ -4,14 +4,22 @@ import time
 import datetime
 import json
 import threading
+import os
 
 stop_keyword = "quit"
+stop_event = threading.Event()
+stop_GUI = ''
 
 def user_input_thread():
-    global stop
     user_input = input("\n")
     if user_input.lower() == stop_keyword:
-    	stop = True
+        stop_event.set()
+
+def GUI_input_thread():
+	global stop_GUI
+	while not stop_event.is_set():
+		txt_file = open('/Users/riccardo/github/Coding/python/GUI/stop.txt', 'r')
+		stop_GUI = txt_file.read().strip()
 
 with open('/Users/riccardo/github/Coding/config/arduino.json') as config_file:
     config = json.load(config_file)
@@ -39,18 +47,29 @@ arduino = serial.Serial(arduino_port, speed, timeout=0)
 file.write(' -------------------\n')
 file.write('|' + formatted_datetime + '|\n')
 file.write(' -------------------\n')
+arduino.setDTR(False)
+time.sleep(0.1)
+arduino.flushInput()
+arduino.setDTR(True)
 
-
-stop = False
 user_input_thread = threading.Thread(target=user_input_thread)
 user_input_thread.start()
+GUI_input_thread = threading.Thread(target=GUI_input_thread)
+GUI_input_thread.start()
 
-while not stop:
-	data = arduino.readline()
-	if data:
-		decoded_data = data.decode().strip()
-		print(decoded_data)
-		file.write(decoded_data + '\n')
-		
-	time.sleep(sleep)
+while not stop_event.is_set():
+    data = arduino.readline()
+    if stop_GUI == 'True':
+    	file.close()
+    	os.system("echo False > stop.txt")
+    	os._exit(0)
+    if data:
+        decoded_data = data.decode().strip()
+        print(decoded_data)
+        file.write(decoded_data + '\n')
+
+    time.sleep(sleep)
+
+user_input_thread.join()
+GUI_input_thread.join()
 file.close()
