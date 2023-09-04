@@ -51,15 +51,20 @@ class Arduino(App):
         button_save.pos_hint = {'center_x': 0.3}
         button_layout.add_widget(button_save)
 
+        self.run_button_original_color = (0, 0.5, 1, 1)
+        self.stop_button_original_color = (0, 0.5, 1, 1)
+
         button_run = Button(text="RUN", bold=True, font_size=40, size_hint=(None, None), size=(150, 60), color=(1, 1, 1, 0.8))
         button_run.background_color = (0, 0.5, 1, 1)
         button_run.bind(on_press=self.run_code)  # Collegato a una nuova funzione "run_code"
+        button_run.bind(on_release=self.reset_color)
         button_run.pos_hint = {'center_x': 0.6}
         button_layout.add_widget(button_run)
 
         button_stop = Button(text="STOP", bold=True, font_size=40, size_hint=(None, None), size=(150, 60), color=(1, 1, 1, 0.8))
         button_stop.background_color = (0, 0.5, 1, 1)
         button_stop.bind(on_press=self.stop_code)  # Collegato a una nuova funzione "run_code"
+        button_stop.bind(on_release=self.reset_color)
         button_stop.pos_hint = {'center_x': 0.9}
         button_layout.add_widget(button_stop)
 
@@ -74,9 +79,11 @@ class Arduino(App):
             data = json.load(f)
         return data
     def run_code(self, instance):
+        instance.background_color = (0, 1, 0, 1)
         self.arduino_process = subprocess.Popen(["python3", "../arduino.py"])
         self.result_label.text = "Running..."
     def stop_code(self, instance):
+        instance.background_color = (1, 0, 0, 1)
         os.system("echo True > stop.txt")
         print('\n####################')
         self.result_label.text = "Program stopped!"
@@ -93,6 +100,12 @@ class Arduino(App):
             self.result_label.text = "JSON saved successfully!"
         except Exception as e:
             self.result_label.text = f"Error: {e}"
+    def reset_color(self, instance):
+        # Reimposta il colore originale del pulsante
+        if instance.text == "RUN":
+            instance.background_color = self.run_button_original_color
+        elif instance.text == "STOP":
+            instance.background_color = self.stop_button_original_color
 
 if __name__ == '__main__':
     Arduino().run()
