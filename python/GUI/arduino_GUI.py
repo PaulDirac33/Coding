@@ -10,6 +10,9 @@ from kivy.graphics import Color, Rectangle
 from kivy.core.window import Window
 from kivy.uix.gridlayout import GridLayout
 import json
+import os
+import subprocess
+import time
 
 Window.size = (460,660)
 class Arduino(App):
@@ -38,7 +41,7 @@ class Arduino(App):
                 section_layout.add_widget(label)
                 section_layout.add_widget(text_input)
 
-        spacer = Widget(size_hint_y=None, height=100)
+        spacer = Widget(size_hint_y=None, height=70)
 
         self.layout.add_widget(spacer)
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=80)
@@ -65,17 +68,18 @@ class Arduino(App):
         self.result_label = Label(text="", size_hint_y=None, height=40)
         self.layout.add_widget(self.result_label)
         return self.layout
-
-
-    
+        
     def load_json_data(self, filename):
         with open(filename, 'r') as f:
             data = json.load(f)
         return data
     def run_code(self, instance):
-        print("Hello world")
+        self.arduino_process = subprocess.Popen(["python3", "../arduino.py"])
+        self.result_label.text = "Running..."
     def stop_code(self, instance):
-        print("quit")
+        os.system("echo True > stop.txt")
+        print('\n####################')
+        self.result_label.text = "Program stopped!"
     
     def save_json(self, instance):
         for key, text_input in self.text_inputs.items():
@@ -83,7 +87,6 @@ class Arduino(App):
             for section_data in self.data.values():
                 if key in section_data:
                     section_data[key] = value
-        
         try:
             with open('/Users/riccardo/github/Coding/config/arduino.json', 'w') as outfile:
                 json.dump(self.data, outfile, indent=2)

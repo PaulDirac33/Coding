@@ -7,13 +7,13 @@ import threading
 import os
 
 stop_keyword = "quit"
-stop_event = threading.Event()  # Crea un oggetto Event condiviso
+stop_event = threading.Event()
 stop_GUI = ''
 
 def user_input_thread():
     user_input = input("\n")
     if user_input.lower() == stop_keyword:
-        stop_event.set()  # Imposta l'evento per indicare l'arresto
+        stop_event.set()
 
 def GUI_input_thread():
 	global stop_GUI
@@ -57,7 +57,7 @@ user_input_thread.start()
 GUI_input_thread = threading.Thread(target=GUI_input_thread)
 GUI_input_thread.start()
 
-while not stop_event.is_set():  # Continua fino a quando l'evento non è impostato
+while not stop_event.is_set():
     data = arduino.readline()
     if stop_GUI == 'True':
     	file.close()
@@ -66,7 +66,6 @@ while not stop_event.is_set():  # Continua fino a quando l'evento non è imposta
     if data:
         decoded_data = data.decode().strip()
         print(decoded_data)
-        print(stop_GUI)
         file.write(decoded_data + '\n')
 
     time.sleep(sleep)

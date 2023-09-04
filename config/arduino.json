@@ -1,6 +1,6 @@
 {
   "File": {
-    "path": "../data",
+    "path": "../../data",
     "name": "arduino",
     "extension": "dat"
   },
