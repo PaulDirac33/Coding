@@ -1,22 +1,16 @@
 #!/usr/bin/python3
 import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import json
+#import pandas as pd
+import sys
 
-with open('../../config/scope.json', 'r') as file:
-    config_data = json.load(file)
+print('Begin the matching.\n')
 
-File = config_data['File']
-Ext = config_data['Extraction']
-
-path_out = File['path_out']+'/'
-Imin = int(File['start'])
-Imax = int(File['stop'])
+path_out = sys.argv[1]+'/'
+Imin = int(sys.argv[2])
+Imax = int(sys.argv[3])
 
 
 for k in range(Imin, Imax + 1):
-	print(k)
 	with open(path_out + 'CH2_' + str(k) + '.dat', 'r') as header_file:
 		header_lines = [header_file.readline().strip(), header_file.readline().strip()]
 	
@@ -33,6 +27,8 @@ for k in range(Imin, Imax + 1):
 	m = len(x1)
 	n = len(x2)
 	y_out = []
+
+	print('File %i#'%k)
 	for i in range(0, n):
 		d = []
 		for j in range(0, m):
@@ -58,3 +54,4 @@ for k in range(Imin, Imax + 1):
 		file_out.write(header_lines[1] + '\n')
 		for i in range(0, n):
 			file_out.write('%.6f\t%.6f\n'%(x2[i], y_out[i]))
+print('Matching completed. Click "check" to control the number of lines.')

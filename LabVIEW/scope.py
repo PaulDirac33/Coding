@@ -2,7 +2,7 @@
 from PIL import Image
 import sys
 
-print('Start to extract')
+print('Begin the analysis.\n')
 
 path_in = sys.argv[1]+'/'
 path_out = sys.argv[2]+'/'
@@ -15,6 +15,7 @@ Dx = float(sys.argv[6])
 Dy = float(sys.argv[7])
 x_units = sys.argv[8]
 y_units = sys.argv[9]
+
 name = 'CH'+channel
 
 for i in range(Imin, Imax + 1):
@@ -28,7 +29,7 @@ for i in range(Imin, Imax + 1):
         colors_checked = set()
 
         with open('color.txt', 'w+') as file_color: 
-            for x in range(23,lenght):
+            for x in range(20,lenght):
                 for y in range(47,height-30):
                     pixel = image.getpixel((x, y))
                     if pixel not in colors_checked:
@@ -61,9 +62,9 @@ for i in range(Imin, Imax + 1):
         coordinates_found = find_coordinates(file_input, color)
 
         if coordinates_found:
-            print(f"Color sought: {color}")
+            print(f"Target color: {color}\n")
             save_coordinates(coordinates_found, file_output)
-            print(f"Color's coordinates found and saved on file: {file_output}")
+            print(f"Color coordinates found and saved on file:\n{file_output}")
         else:
             print(f"Color {color} not found!")
 
