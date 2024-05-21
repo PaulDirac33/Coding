@@ -1,9 +1,12 @@
-\newcommand{\Footnote}{\raisebox{-0.3\height}{\href{\Grouplink}{\includegraphics[height=0.75cm]{../logo.png}}} \href{\Grouplink}{\textbf{Aiuto e Ripetizioni per Materie Scientifiche}}}
+\newcommand{\Footnote}{
+    \raisebox{-0.3\height}{
+        \href{\Grouplink}{\includegraphics[height=0.75cm]{../logo.png}}}
+        \href{\Grouplink}{\textbf{Aiuto e Ripetizioni per Materie Scientifiche}}}
 
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\leftmark} % Capitolo a sinistra
-\fancyfoot[L]{\Footnote} % Posiziona la nota a sinistra
+\fancyfoot[L]{\Footnote\dotfill\thepage} % Posiziona la nota a sinistra
 %\renewcommand{\footrulewidth}{0.4pt}
-\fancyfoot[R]{\thepage}
-\setlength{\footskip}{45pt} % Regola questo valore secondo le tue esigenze
+%\fancyfoot[R]{\thepage}
+\setlength{\footskip}{44pt} % Regola questo valore secondo le tue esigenze
