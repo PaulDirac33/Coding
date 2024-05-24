@@ -1,23 +1,20 @@
 \documentclass[12 pt, a4paper, twoside]{book}
-
-\input{./variables.tex}
 \input{../packages.tex}
+\input{../global_variables.tex}
 \input{../settings.tex}
-
+\setcounter{tocdepth}{3}
 \begin{document}
+    \input{../footnote.tex}
+    \input{./Text/titlepage.tex}
 
-\input{../footnote.tex}
-\input{./Text/1_fronte.tex}
+    \clearpage\null\thispagestyle{empty}\clearpage
+    \tableofcontents %index
 
-\clearpage\null\thispagestyle{empty}\clearpage
-\tableofcontents %index
+    \input{./Text/Chapter_1.tex}
+    \input{./Text/Chapter_2.tex}
+    %\input{./Text/Chapter_3.tex}
 
-\input{./Text/Chapter_1.tex}
-\input{./Text/2.10-2.13.tex}
-\input{./Text/3MotiRelativi.tex}
-
-\begin{thebibliography}{100}
-\input{./Text/bibliography.tex}
-\end{thebibliography}
-
+    \begin{thebibliography}{100}
+        \input{./Text/bibliography.tex}
+    \end{thebibliography}
 \end{document}

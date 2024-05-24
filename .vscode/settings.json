@@ -130,6 +130,8 @@
             ],
             "env": {}
         }
-    ]
+    ],
+    "editor.fontLigatures": false,
+    "editor.semanticTokenColorCustomizations": {}
     
 }
