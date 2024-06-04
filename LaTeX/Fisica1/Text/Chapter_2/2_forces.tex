@@ -32,15 +32,14 @@ opposto.
 \label{eq:forces:vincolar_reaction}
 \end{equation}
 \begin{figure}[htbp]
-    \begin{center}
+\center
         \includegraphics[width=7cm]{images/NPF.png}
         \caption{Corpo soggetto alla forza peso, alla forza $\vec F$ ed alla
         reazione vincolare.}
-\label{fig:forces:vincolar_reaction_2}
-\end{center}
+        \label{fig:vincolar_reaction_2}
 \end{figure}
 \\
-Nella situazione rappresentata in figura (\ref{fig:forces:vincolar_reaction_2}),
+Nella situazione rappresentata in figura (\ref{fig:vincolar_reaction_2}),
 notiamo che l'aggiunta di una terza forza nel sistema modifica l'intensità
 di $\vec N$. Per prima cosa bisogna scomporre lungo l'asse $x$ ed $y$ la
 forza $\vec F$.
@@ -122,7 +121,7 @@ ne segue che:
 \end{equation}
 L'accelerazione del corpo subisce una modifica. Trascurare l'attrito
 significa considerare $\mu_{s,d}\ll 1$, ed infatti in questa approssimazione
-riotteniamo il caso discusso nel paragrafo $(2.5)$, ovvero:
+riotteniamo il caso discusso nel paragrafo precedente, ovvero:
 \begin{equation}
     F>0\quad\quad \ddot x = -\frac Fm\cos\phi
 \end{equation}
@@ -151,7 +150,7 @@ geometrico che dipende dalla forma del corpo ed è misurato in metri, ad
 esempio per una sfera $k = 6\pi R$.
 Se sul corpo non agiscono altre forze oltre a quella d'attrito viscoso,
 allora abbiamo anche un'accelerazione proporzionale alla velocità e dunque
-un moto smorzato esponenzialmente, come quello incontrato nel paragrafo $(1.4)$.
+un moto smorzato esponenzialmente, come quello incontrato nel paragrafo (\ref{section:MRSE}).
 \begin{equation}
     \vec F_v = -k\eta\vec v = m\vec a \seg
     \vec a = -\frac{k\eta}m\vec v =-\beta \vec v 
@@ -198,14 +197,17 @@ Integrando nuovamente si ottiene l'equazione del moto:
 \label{eq:forces:viscous_x}
 \end{equation}
 \begin{figure}[htbp]
-    \begin{center}
-        \includegraphics[width=10cm]{images/cadsmorzxv.png}
-        \caption{Spazio percorso (blu) e velocità (rosso) di un corpo in caduta libera con attrito viscoso. La linea orizzontale tratteggiata rappresenta il valore asintotico (a regime) della velocità. L'asse delle ascisse rappresenta il tempo in unità di $\tau$.}
-\end{center}
+\center
+        \includegraphics[width=13cm]{images/freefallXV.png}
+        \caption{Spazio percorso (rosso) e velocità (blu) di un corpo in
+        caduta libera con attrito viscoso. La linea orizzontale tratteggiata
+        rappresenta il valore asintotico (a regime) della velocità.
+        L'asse delle ascisse rappresenta il tempo in unità di $\tau$.}
 \label{fig:forces:freefall:curves}
 \end{figure}
 \\
-Il valore a regime di $v_{(t)}$ si calcola facendo il limite per $t\gg\tau\seg$
+Il valore a regime di $v_{(t)}$ si calcola facendo il limite per
+$t\gg\tau\seg$
 \begin{equation}
     v_\infty\coloneqq v_{\sx t\gg\tau \dx} = g\tau
 \label{eq:forces:viscous_vlim}
@@ -216,26 +218,29 @@ rettilineo uniforme.\\
 Se invece sviluppiamo sia $x_{(t)}$ che $v_{(t)}$ per $t\ll\tau$,
 possiamo osservare che l'effetto della forza d'attrito è ancora troppo
 piccolo e quindi le curve posso essere approssimate con le equazioni della
-caduta libera senza attrito.
+caduta libera senza attrito.\\
+Le leggi orarie della posizione e della velocità, ed anche la velocità di regime
+sono rappresentate in figura (\ref{fig:forces:freefall:curves}). Nelle figure
+(\ref{fig:freefall_approx_x}) e (\ref{fig:freefall_approx_v})
+abbiamo messo in risalto la differenza tra le soluzioni con attrito e quelle
+senza attrito.
 
 \begin{figure}[htbp]
-    \begin{center}
-    \includegraphics[width=10cm]{images/cadsmorzx.png}
+    \center
+    \includegraphics[width=13cm]{images/freefallX.png}
     \caption{Approssimazione per piccoli tempi, la curva nera è l'equazione
     della posizione in funzione del tempo in caduta libera senza attrito:
     $x_{(t)} = \frac12gt^2$}
-\end{center}
-\label{fig:forces:freefall:approx_x}
+\label{fig:freefall_approx_x}
 \end{figure}
 
 \begin{figure}[htbp]
-    \begin{center}
-    \includegraphics[width=10cm]{images/cadsmorzv.png}
+\center
+    \includegraphics[width=13cm]{images/freefallV.png}
     \caption{Approssimazione per piccoli tempi, la curva nera è l'equazione
     della velocità in funzione del tempo in caduta libera senza attrito:
     $v_{(t)} = gt$}
-\end{center}
-\label{fig:forces:freefall:approx_v}
+\label{fig:freefall_approx_v}
 \end{figure}
 
 \subsection{Forza elastica}
@@ -265,8 +270,8 @@ sola forza elastica otterremo che:
 \end{equation}
 È l'equazione differenziale dell'oscillatore armonico con
 $\omega = \sqrt{\frac km}$ e periodo $T =2\pi\sqrt{\frac mk}$.
-La soluzione sarà come la (\ref{eq:MA}), possiamo utilizzare la funzione coseno in
-quanto il punto parte da una posizione pari a $\Delta x$:
+La soluzione sarà come la (\ref{eq:MA}), possiamo utilizzare la funzione
+coseno in quanto il punto parte da una posizione pari a $\Delta x$:
 \begin{equation}
     x_{(t)} = \Delta x \cos\sx \sqrt{\frac km}t\dx
 \label{eq:forces:elastic_x}
