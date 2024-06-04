@@ -1,0 +1,20 @@
+\documentclass[12 pt, a4paper, twoside]{book}
+\input{../packages.tex}
+\input{../global_variables.tex}
+\input{../settings.tex}
+\setcounter{tocdepth}{3}
+\begin{document}
+    \input{../footnote.tex}
+    \input{./Text/titlepage.tex}
+
+    \clearpage\null\thispagestyle{empty}\clearpage
+    \tableofcontents %index
+
+    \input{./Text/Chapter_1.tex}
+    \input{./Text/Chapter_2.tex}
+    \input{./Text/Chapter_3.tex}
+
+    \begin{thebibliography}{100}
+        \input{./Text/bibliography.tex}
+    \end{thebibliography}
+\end{document}

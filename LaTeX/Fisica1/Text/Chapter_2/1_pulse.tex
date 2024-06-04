@@ -1,0 +1,52 @@
+\section{Quantità di moto}
+%---------------------------------------------------------------------------
+Una grandezza molto importante che si introduce in dinamica è la quantità
+di moto o impulso o momento (lineare). La quantità di moto di un corpo è
+definita come il prodotto tra la sua massa e la sua velocità, dunque nel
+sistema internazionale si misura in chilogrammi per metro al secondo.
+\begin{equation}
+    \boxed{\vec p = m\vec v}\quad\quad \sss p\ddd = M\cdot L\cdot T^{-1}
+\label{eq:pulse_def}
+\end{equation}
+Nel caso in cui la massa dell'oggetto sia costante nel tempo, ovvero nella
+maggior parte dei casi che incontreremo, derivando l'impulso rispetto al
+tempo otterremo che:
+\begin{equation}
+    \frac{d\vec p}{dt} = \frac d{dt}\sx m\vec v\dx =
+    m\frac{d\vec v}{dt} =\vec F
+\end{equation}
+Quindi la seconda legge di Newton nel caso più generale, identifica la
+forza come la derivata temporale della quantità di moto.
+\begin{equation}
+    \boxed{\vec F = \frac{d\vec p}{dt}}
+\label{eq:newt2law_p}
+\end{equation}
+\subsection{Teorema dell'impulso}
+Integrando l'equazione (\ref{eq:newt2law_p}) possiamo ricavare la variazione della
+quantità di moto tra istante finale e istante iniziale che chiameremo impulso $(\vec J)$.
+\begin{equation}
+    \vec F = \frac{d\vec p}{dt}\seg \int_{t_0}^tdt'\frac{d\vec p}{dt'} =
+    \int_{t_0}^tdt'\vec F\seg \vec p_{(t)} - \vec p_{\sx t_0\dx} =
+    \int_{t_0}^tdt'\vec F
+\end{equation}
+\begin{equation}
+    \boxed{\vec J = \int_{t_0}^tdt'\vec F_{(t')}}
+\label{eq:pulse_theorem}
+\end{equation}
+\\
+Per il teorema della media, il valor medio della forza  è proprio il rapporto tra variazione di quantità di moto e intervallo di tempo.
+\begin{equation}
+\vec F_m = \frac1{t-t_0}\int_{t_0}^tdt'\vec F = \frac{\Delta\vec p}{\Delta t}
+\end{equation}
+\begin{itemize}
+    \item Se $\vec F$ è costante nel tempo allora:
+    \begin{equation}
+        \vec J = \vec F\Delta t\seg\Delta\vec p = \vec J \seg\Delta\vec v
+        = \frac{\vec J}m
+    \end{equation}
+    \\\item Se $\vec F$ è nulla allora:
+    \begin{equation}
+        \Delta\vec p = 0\seg\vec p_{(t)} = cost
+    \end{equation}
+    In assenza di forze applicate la quantità di moto di un corpo si conserva.
+\end{itemize}

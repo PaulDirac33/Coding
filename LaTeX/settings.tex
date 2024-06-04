@@ -1,0 +1,18 @@
+% Custom settings
+% Adjust margins
+\geometry{
+    left=\Leftmargin cm,
+    right=\Rightmargin cm,
+    top=\Topmargin cm,
+    bottom=\Bottommargin cm,
+}
+% Set link style
+\definecolor{tag_color}{RGB}{\tagcolor} % Define custom color for tags
+\definecolor{hash_color}{RGB}{\hashcolor} % Define custom color for @links (telegram)
+
+\hypersetup{
+    colorlinks=true, % Enable colored links
+    linkcolor=\Linkcolor, % Color of internal links
+    urlcolor=tag_color % Color of URLs
+}
+
