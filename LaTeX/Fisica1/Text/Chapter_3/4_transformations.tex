@@ -1,0 +1,80 @@
+\section{Esempi di trasformazioni}
+%---------------------------------------------------------------------------
+Vediamo ora qualche trasformazione nota, nel caso in cui le due origini dei
+sistemi all'inizio dei tempi coincidano. Studieremo i tre casi di moto rettilineo
+uniforme, uniformemente accelerato e circolare.
+
+\subsection{Moto rettilineo uniforme}
+
+\begin{equation}
+    \vec r_{0(t)} = \vec v_0 t\qquad \vec v_0 = v_0\hat u_x
+\end{equation}
+\\
+\begin{equation}
+    \begin{cases}
+        x' = x - v_0t\\
+        y' = y\\
+        z' = z
+    \end{cases}\seg
+    \begin{cases}
+        v_x' = v_x - v_0\\
+        v_y' = v_y\\
+        v_z' = v_z
+    \end{cases}
+\end{equation}
+
+\subsection{Moto rettilineo uniformemente accelerato}
+
+\begin{equation}
+    \vec r_{0(t)} = \frac12\vec a_0 t^2\qquad \vec v_{0(t)} = \vec a_0t
+    \qquad \vec a_0 = a_0\hat u_x
+\end{equation}
+\\
+\begin{equation}
+    \begin{cases}
+        x' = x - \frac12a_0t^2\\
+        y' = y\\
+        z' = z
+    \end{cases}\seg
+    \begin{cases}
+        v_x' = v_x - a_0t\\
+        v_y' = v_y\\
+        v_z' = v_z
+    \end{cases}\seg
+    \begin{cases}
+        a_x' = a_x - a_0\\
+        a_y' = a_y\\
+        a_z' = a_z
+    \end{cases}
+\end{equation}
+
+\subsection{Moto circolare uniforme}
+
+\begin{equation}
+    \vec r_0 = \vec v_0 = \vec a_0 = \vec0
+    \qquad \vec\omega = \omega_0\hat u_z
+    \seg
+    \begin{cases}
+        \vec r' = \vec r\\
+        \vec v' = \vec v - \vec\omega\times\vec r'\\
+        \vec a' = \vec a - 2\vec\omega\times\vec v' -\vec\omega\times\vec\omega
+        \times\vec r'
+    \end{cases}
+\end{equation}
+\\
+Quindi anche considerando un punto fermo, ovvero con $\vec v = \vec 0$, quindi
+anche $\vec a = \vec 0$. Ne segue che:
+
+\begin{equation}
+    \begin{cases}
+        \vec v' = - \vec\omega\times\vec r\\
+        \vec a' = - 2\vec\omega\times\vec v' -\vec\omega\times\vec\omega
+        \times\vec r = \vec\omega\times\vec\omega\times\vec r = 
+        \sx\vec\omega\cdot\vec r\dx\vec\omega -\omega^2\vec r
+    \end{cases}
+\end{equation}
+\\
+Dato che $\vec\omega\perp\vec r$ otteniamo $\vec a' = -\omega^2\vec r$. Come
+è giusto che sia, in $\mathcal{S'}$ il punto fermo in $\vec r$ appare ruotare
+in direzione opposta alla quella attorna alla quale in realtà sta ruodando il
+sistema, dunque si misura una forza apparente pari appunto alla forza centripeta.

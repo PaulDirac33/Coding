@@ -1,0 +1,48 @@
+\section{Teorema delle velocità relative}
+
+Dati due differenti sistemi di riferimento,  $\mathcal{S}$ in quiete, ed
+$\mathcal{S'}$ in moto rispetto ad  $\mathcal{S}$, si vogliono trovare le
+relazioni che legano le grandezze osservate nel sistema fisso e quelle
+osservate nel sistema mobile.\\
+Quindi preso un punto generico $P$ nello spazio, esso avrà come raggio
+vettore $\vec r$ in  $\mathcal{S}$, ed $\vec r'$ in  $\mathcal{S'}$.
+\\Possiamo dunque scrivere che:
+
+\begin{equation}
+    \vec r - \vec{OO'} = \vec r' \seg \boxed{ \vec r' = \vec r - \vec r_{0(t)}}
+\label{eq:r_prime}
+\end{equation}
+\\
+Dove $\vec{OO'}$, chiamato d'ora in poi $\vec r_{0(t)}$, è il raggio vettore
+dell'origine del sistema $\mathcal{S'}$.
+Derivando rispetto al tempo l'equazione (\ref{eq:r_prime}) si otterrà la
+velocità del punto $P$ nel sistema $\mathcal{S'}$ in funzione della velocità
+in $\mathcal{S}$, della velocità di traslazione del sistema $\mathcal{S'}$
+ed in generale anche della velocità angolare con cui ruota $\mathcal{S'}$.
+
+\begin{equation}
+    \frac{d\vec r'}{dt} = \frac{d\vec r}{dt} - \frac{d\vec r_0}{dt}
+\end{equation}
+\\
+Definiamo con $\vec u = \frac{d\vec r_0}{dt}$ la veloctià dell'origine $O'$,
+mentre dato che $\vec r' = x'\hat u_{x'} + y'\hat u_{y'} + z'\hat u_{z'}$,
+occorre derivare anche i versori direzionali del sistema $\mathcal{S'}$.
+
+\begin{equation}
+    \frac{d\vec r'}{dt} = \dot x'\hat u_{x'}+\dot y'\hat u_{y'}+\dot z'\hat u_{z'}+
+    + x'\frac{d\hat u_{x'}}{dt}+ y'\frac{d\hat u_{y'}}{dt}+ z'\frac{d\hat u_{z'}}{dt}
+    =\vec v-\vec u
+\end{equation}
+\\
+Quindi definendo $\vec v' = \dot x'\hat u_{x'}+\dot y'\hat u_{y'}+
+\dot z'\hat u_{z'}$ e ricordando che $\frac{d\hat u_{x'_i}}{dt} =
+\vec\omega\times\hat u_{x'_i}$ otterremo il teorema delle velocità relative:
+
+\begin{equation}
+    \boxed{\vec v' = \vec v - \vec u - \vec \omega\times\vec r'}
+\end{equation}
+\\
+\begin{equation}
+    \vec v_t \coloneqq \vec v - \vec v' = \vec u + \vec \omega\times\vec r'
+    \seg \boxed{\vec v' = \vec v - \vec v_t}
+\end{equation}

@@ -1,30 +1,26 @@
-%-----------------------------------------------------------------------------------------------------------------------------------
 \chapter{Moti relativi}
-%-----------------------------------------------------------------------------------------------------------------------------------
+%-------------------------------------------------------------------------------
 \begin{figure}[htbp]
-\begin{center}
-\includegraphics[width=10cm]{images/motirelativi.png}
-\caption{Rappresentazione del sistema di riferimento fisso $\mathcal{S}$, e del sistema  $\mathcal{S'}$ in moto generico rispetto ad  $\mathcal{S}$.}
-%\label{default}
-\end{center}
+\center
+    \includegraphics[width=13cm]{images/relativemotions.png}
+    \caption{Rappresentazione del sistema di riferimento fisso $\mathcal{S}$,
+    e del sistema  $\mathcal{S'}$ in moto generico rispetto ad  $\mathcal{S}$.}
+\label{fig:RelativeMotions}
 \end{figure}
+Il concetto di moto relativo è cruciale in fisica. Di conseguenza dobbiamo
+disporre di alcune formule che trasformano le grandezze misurate in un dato
+sistema di riferimento in quelle misurare in un altro sistema, in moto
+rispetto al primo.\\
+Vedremo quindi come le posizioni, le velocità e le accelerazioni trasformano
+da un sistema all'altro. Questi concetti sono ben noti fin dal 1600, e la
+teoria che vedremo è chiamata relatività galileiana.\\
+Nella relatività galileliana, a differenza della relatività speciale di
+Einstein, il tempo è assoluto, ovvero scorre nello stesso identico modo per
+ogni osservatore.
+Di conseguenza gli eventi in questo spazio-tempo, saranno identificati dallo
+stesso parametro temporale $t$ e dai vettori $\vec r$ ed $\vec r'$.
 
-\section{Teorema delle velocità relative}
-
-Dati due differenti sistemi di riferimento,  $\mathcal{S}$ in quiete, ed  $\mathcal{S'}$ in moto rispetto ad  $\mathcal{S}$, si vogliono trovare le relazioni che legano le grandezze osservate nel sistema fisso e quelle osservate nel sistema mobile.\\
-Quindi preso un punto generico $P$ nello spazio, esso avrà come raggio vettore $\vec r$ in  $\mathcal{S}$, ed $\vec r'$ in  $\mathcal{S'}$.
-\\Possiamo dunque scrivere che:
-
-\begin{equation}
-\vec r = \vec{OO'}+\vec r
-\end{equation}
-
-Dove $\vec{OO'}$ è il raggio vettore dell'origine del sistema $\mathcal{S'}$. Derivando rispetto al tempo l'equazione $(3.1)$ si otterrà la velocità del punto $P$ nel sistema $\mathcal{S}$ in funzione della velocità del punto $P$ in $\mathcal{S'}$, della velocità di traslazione del sistema $\mathcal{S'}$ ed in generale anche della velocità angolare con cui ruota $\mathcal{S'}$.
-
-\begin{equation}
-\boxed{\vec v = \vec v' + \vec u + \vec \omega\times\vec r'}
-\end{equation}
-
-\begin{equation}
-\vec v_t \coloneqq \vec v - \vec v' = \vec u + \vec \omega\times\vec r'\seg \vec v = \vec v' + \vec v_t
-\end{equation}
+\input{./Text/Chapter_3/1_relativespeed.tex}
+\input{./Text/Chapter_3/2_relativeacceleration.tex}
+\input{./Text/Chapter_3/3_systems.tex}
+\input{./Text/Chapter_3/4_transformations.tex}
