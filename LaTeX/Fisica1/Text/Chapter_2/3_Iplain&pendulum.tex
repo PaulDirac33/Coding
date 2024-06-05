@@ -10,6 +10,7 @@ l'asse ortogonale ad esso, come mostrato in figura (\ref{fig:Iplain&pendulum:Ipl
 direzione verticale e scomponibile in $\vec F_{px}$ ed $\vec F_{py}$, e la
 forza di reazione vincolare diretta lungo la direzione positiva dell'asse $y$.
 Dunque avremo che:
+
 \begin{equation}
     x:\quad mg\sin\theta = m\ddot x\quad\quad y: \quad N - mg\cos\theta = 0
 \end{equation}
@@ -21,6 +22,7 @@ $$\Downarrow$$
     \end{cases}
     \seg x_{(t)} = \frac12 g\sin\theta\cdot t^2
 \end{equation}
+\\
 Si ha un moto uniformemente accelerato con accelerazione $g\sin\theta$.
 \begin{figure}[htbp]
  \center
@@ -33,14 +35,18 @@ Si ha un moto uniformemente accelerato con accelerazione $g\sin\theta$.
 \\
 Nel caso con attrito avremo un moto solo se la componente parallela della
 forza peso è maggiore della forza d'attrito massima:
+
 \begin{equation}
     mg\sin\theta > \mu_s mg\cos\theta\seg \boxed{\tan\theta>\mu_s}
 \end{equation}
+\\
 Supponendo di trovarci in questa situazione, studiamo il caso dinamico:
+
 \begin{equation}
     x:\quad mg\sin\theta -\mu_d mg\cos\theta = m\ddot x\seg
     \boxed{a_x = g\sx\sin\theta-\mu_d\cos\theta\dx}
 \end{equation}
+\\
 Dato che $\mu_d<\mu_s$, non può verificarsi il caso in cui $\tan\theta
 =\mu_d$ che annullerebbe l'accelerazione lungo $x$.
 
@@ -65,26 +71,36 @@ Vogliamo studiare la legge oraria dell'angolo $\theta$, l'angolo tra l'asse
 verticale e la fune.\\
 Scriviamo dunque le equazioni di Newton, considerando un asse parallelo alla
 fune ed uno ortogonale.
+
 \begin{equation}
     x:\quad -mg\sin\theta = ma_t\quad\quad y:\quad T-mg\cos\theta = ma_n
 \end{equation}
+\\
 \begin{equation}
     a_t = \frac{dv}{dt}=\frac d{dt}\sx L\dot\theta\dx=
     L\ddot\theta\quad\quad a_n = 0
 \end{equation}
+\\
 Lungo l'asse $y$ il corpo è in equilibrio, mentre lungo l'asse $x$ abbiamo
 la seguente equazione differenziale:
+
 \begin{equation}
     \boxed{\ddot\theta + \frac gL\sin\theta = 0}
 \label{eq:pendulum_DE}
 \end{equation}
-Se consideriamo l'approssimazione di piccole oscillazioni, l'equazione differenziale appena ottenuta si riduce all'equazione dell'oscillatore armonico, in quanto:
+\\
+Se consideriamo l'approssimazione di piccole oscillazioni, l'equazione
+differenziale appena ottenuta si riduce all'equazione dell'oscillatore
+armonico, in quanto:
+
 \begin{equation}
     \theta \ll 1 \seg \sin\theta \sim \theta \seg
     \ddot\theta + \frac gL\theta = 0
 \label{eq:pendulum_ODE}
 \end{equation}
+\\
 Dove la la pulsazione propria del sistema è $\omega_0 = \sqrt{\frac gL}$.
+
 \begin{equation}
     \theta_{(t)} = \theta_0\sin\sx\omega_0t+\phi\dx\quad\quad
     \omega_{(t)} = \omega_0\theta_0\cos\sx\omega_0t+\phi\dx\quad\quad

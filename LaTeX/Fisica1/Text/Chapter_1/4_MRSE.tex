@@ -2,7 +2,9 @@
 \label{section:MRSE}
 %---------------------------------------------------------------------------
 Questo tipo di moto si incontra quando si ha un'accelerazione proporzionale
-alla velocità con coefficiente negativo (altrimenti sarebbe forzato esponenzialmente nel tempo). Introduciamo quindi un parametro di smorzamento $\beta>0$.
+alla velocità con coefficiente negativo (altrimenti sarebbe forzato esponenzialmente nel tempo).
+Introduciamo quindi un parametro di smorzamento $\beta>0$.
+
 \begin{equation*}
     a_{(t)} = -\beta v_{(t)} = \dot v_{(t)}\seg \frac{\dot v}{v} =
     -\beta \seg \int_{t_0}^{t}dt' \frac{\dot v}{v} =  -\beta\int_{t_0}^{t}dt'\seg
@@ -20,12 +22,13 @@ alla velocità con coefficiente negativo (altrimenti sarebbe forzato esponenzial
     \boxed{v_{(x)} = v_0 - \beta\sx x - x_0\dx}
 \label{eq:v(x)_MRSE}
 \end{equation}
-
+\\
+Troviamo un esempio delle leggi orarie di questo tipo di moto in figura (\ref{fig:MRSE}).
 \begin{figure}[htbp]
     \begin{center}
         \includegraphics[width=13cm]{images/MRSE.png} 
-        \caption{Un esempio del grafico di accelerazione (rosso), velocità (verde)
-        e posizione (blu), nel moto smorzato esponenzialmente. L'asse delle
+        \caption{Un esempio del grafico di accelerazione (blu), velocità (rosso)
+        e posizione (nero), nel moto smorzato esponenzialmente. L'asse delle
         ascisse rappresenta il tempo, mentre quello delle ordinate
         la variabile dipendente.}
     \end{center}

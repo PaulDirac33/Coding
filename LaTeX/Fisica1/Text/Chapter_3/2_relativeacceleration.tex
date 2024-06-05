@@ -1,0 +1,37 @@
+\section{Teorema delle accelerazioni relative}
+%--------------------------------------------------------------------------
+Analogamente al caso delle velocità se definiamo $\vec a_0 = \frac{d\vec u}{dt}$
+ed $\vec a' = \ddot x'\hat u_{x'}+\ddot y'\hat u_{y'}+\ddot z'\hat u_{z'}$
+possiamo scrivere che:
+
+\begin{equation}
+    \frac{d\vec v'}{dt} = \vec a' + \vec\omega\times\vec v' = \vec a - \vec a_0
+    -\frac d{dt}\sx\vec\omega\times\vec r'\dx
+\end{equation}
+\\
+\begin{equation}
+    \frac d{dt}\sx\vec\omega\times\vec r'\dx = \frac{d\vec\omega}{dt}\times\vec r'
+    + \vec\omega\times\frac{d\vec r'}{dt} = \vec\alpha\times\vec r' + \vec\omega\times
+    \sx\vec v' + \vec\omega\times\vec r'\dx
+\end{equation}
+\\
+\begin{equation}
+    \boxed{\vec a' = \vec a - \vec a_0 - 2\vec\omega\times\vec v'-\vec\alpha\times
+    \vec r' - \vec\omega\times\vec\omega\times\vec r'}
+\end{equation}
+\\
+In questo caso l'accelerazione di trascinamento è definita come $\vec a_t = 
+\vec a_0 + \vec\alpha\times\vec r' +\vec\omega\times\vec\omega\times\vec r'$,
+quindi in definitiva avremo che:
+
+\begin{equation}
+    \vec a' = \vec a - \vec a_t -2\vec\omega\times\vec v'
+\end{equation}
+\\
+Abbiamo quindi disaccoppiato da $\vec a_t$ un termine dipendente dalla velocità
+del punto in $\mathcal{S'}$, chiamato accelerazione di Coriolis.
+
+\begin{equation}
+    \vec a_{cor} = 2\vec\omega\times\vec v'\seg \boxed{\vec a' = \vec a -\vec a_t
+    -\vec a_{cor}}
+\end{equation}
