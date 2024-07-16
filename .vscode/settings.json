@@ -132,6 +132,6 @@
         }
     ],
     "editor.fontLigatures": false,
-    "editor.semanticTokenColorCustomizations": {}
+    "editor.semanticTokenColorCustomizations": {},
     
 }
