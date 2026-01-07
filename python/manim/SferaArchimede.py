@@ -66,7 +66,7 @@ class SphereBuoyancyScene(Scene):
         intro_text.next_to(title_text, DOWN, buff=0.8)
 
         # Animazioni sequenziali (~40 s totali)
-        total_time = 40
+        total_time = 36
         per_phrase = total_time / len(intro_text_lines)
         for f in intro_text:
             self.play(Write(f), run_time=per_phrase)
