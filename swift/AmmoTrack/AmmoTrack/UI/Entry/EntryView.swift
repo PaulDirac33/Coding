@@ -45,8 +45,7 @@ struct EntryView: View {
 
     // L'ultima scelta resta in memoria: dopo un'uscita basta scrivere "50" e premere ↓.
     @AppStorage("entry.caliber") var storedCaliber = ""
-    /// Vuota all'avvio: si parte sempre dal solo calibro (l'arma serve per gli spari, non per le aggiunte).
-    @State var selectedWeapon = ""
+    @AppStorage("entry.weapon") var selectedWeapon = ""
     @AppStorage("entry.provenance") var storedProvenance = "ricaricate"
 
     // inserimento
