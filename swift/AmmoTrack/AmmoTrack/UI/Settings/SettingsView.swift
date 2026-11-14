@@ -193,7 +193,7 @@ struct SettingsView: View {
                 Button("Aggiungi") { addCaliber() }
                     .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text("Il .22 LR non si ricarica: lasciandolo non ricaricabile sparisce la scelta ricaricate/comprate.")
+            Text("Il 22 LR non si ricarica: lasciandolo non ricaricabile sparisce la scelta ricaricate/comprate.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

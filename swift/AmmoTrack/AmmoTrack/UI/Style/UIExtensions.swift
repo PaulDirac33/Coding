@@ -151,3 +151,22 @@ struct ErrorLine: View {
         }
     }
 }
+/// Cartuccia stilizzata (SF Symbols non ne ha una). Prende il colore da foregroundStyle.
+struct CartridgeIcon: View {
+    var height: CGFloat = 24
+
+    var body: some View {
+        let w = height * 0.40
+        VStack(spacing: 1) {
+            UnevenRoundedRectangle(topLeadingRadius: w / 2, bottomLeadingRadius: 1,
+                                   bottomTrailingRadius: 1, topTrailingRadius: w / 2)
+                .frame(width: w, height: height * 0.36)
+            RoundedRectangle(cornerRadius: 1)
+                .frame(width: w, height: height * 0.50)
+                .opacity(0.65)
+            RoundedRectangle(cornerRadius: 1)
+                .frame(width: w * 1.15, height: height * 0.10)
+        }
+        .frame(height: height)
+    }
+}

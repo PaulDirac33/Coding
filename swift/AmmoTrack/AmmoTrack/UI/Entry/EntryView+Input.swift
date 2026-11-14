@@ -165,6 +165,11 @@ extension EntryView {
             fail("Nessun calibro configurato: aggiungilo dalle Impostazioni (⌘,).")
             return
         }
+        if kind == .shot && !canShoot {
+            statusKind = .hint
+            statusText = "Per registrare uno sparo scegli prima l'arma."
+            return
+        }
 
         var date = Date()
         var hasTime = true

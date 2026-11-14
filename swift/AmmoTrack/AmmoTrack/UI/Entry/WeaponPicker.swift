@@ -20,8 +20,10 @@ struct WeaponPicker: View {
 
     @Namespace private var ns
 
-    private let buttonWidth: CGFloat = 320
+    static let ballSize: CGFloat = 64
+    private let chipWidth: CGFloat = 240
     private let panelWidth: CGFloat = 340
+    private let gap: CGFloat = 14
 
     private static var morphs: Bool {
         if #available(macOS 26.0, *) { return true }
@@ -29,79 +31,98 @@ struct WeaponPicker: View {
     }
 
     var body: some View {
-        if WeaponPicker.morphs {
-            morphing
-        } else {
-            classic
-        }
+        if WeaponPicker.morphs { morphing } else { classic }
     }
 
     // MARK: Le due versioni
 
-    /// macOS 26: il tasto e il banner sono lo stesso pezzo di vetro, che si trasforma.
+    /// macOS 26: la pallina resta ferma; il banner (o la capsula dell'arma) è un altro pezzo di vetro
+    /// che nasce da lei e si stacca, come le palline di Spotlight.
     private var morphing: some View {
-        GlassContainer(spacing: 12) {
-            if isOpen {
-                panel
-                    .liquidGlass(cornerRadius: 26)
-                    .glassMorphID("weaponPicker", in: ns)
-            } else {
-                pickerButton
+        GlassContainer(spacing: gap) {
+            HStack(alignment: .top, spacing: gap) {
+                ball
                     .glassCapsule(interactive: true)
-                    .glassMorphID("weaponPicker", in: ns)
+                    .glassMorphID("ball", in: ns)
+                if isOpen {
+                    panel
+                        .liquidGlass(cornerRadius: 26)
+                        .glassMorphID("banner", in: ns)
+                } else if let w = currentWeapon {
+                    weaponChip(w)
+                        .glassCapsule(interactive: true)
+                        .glassMorphID("banner", in: ns)   // capsula ⇄ banner: stesso id, si trasformano
+                }
             }
         }
     }
 
-    /// Sistemi precedenti: tasto in materiale traslucido e popover.
+    /// Sistemi precedenti: pallina in materiale traslucido e popover a destra.
     private var classic: some View {
-        pickerButton
-            .glassCapsule()
-            .popover(isPresented: $isOpen, arrowEdge: .bottom) {
-                panel
-                    .padding(6)
+        HStack(alignment: .top, spacing: gap) {
+            ball
+                .glassCapsule()
+                .popover(isPresented: $isOpen, arrowEdge: .trailing) {
+                    panel.padding(6)
+                }
+            if let w = currentWeapon {
+                weaponChip(w).glassCapsule()
             }
+        }
     }
 
-    // MARK: Tasto
+    private func toggle() {
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.74)) { isOpen.toggle() }
+    }
+
+    // MARK: Pallina e capsula
 
     private var currentWeapon: Weapon? { store.config.weapon(target.weaponID) }
 
-    private var titleText: String {
-        if target.caliberID.isEmpty { return "Nessun calibro" }
-        return currentWeapon?.name ?? "Senza arma"
+    private var caliberName: String {
+        target.caliberID.isEmpty ? "—" : store.config.caliberName(target.caliberID)
     }
 
-    private var subtitleText: String {
-        guard !target.caliberID.isEmpty else { return "Aggiungi un calibro dalle Impostazioni" }
-        var parts = [store.config.caliberName(target.caliberID)]
-        if let w = currentWeapon, !w.serial.isEmpty { parts.append("matr. \(w.serial)") }
-        return parts.joined(separator: " · ")
+    /// Un quadrato con la capsula di vetro diventa un cerchio.
+    private var ball: some View {
+        Button(action: toggle) {
+            VStack(spacing: 3) {
+                CartridgeIcon(height: 22)
+                Text(caliberName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 6)
+            .frame(width: Self.ballSize, height: Self.ballSize)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
 
-    private var pickerButton: some View {
-        Button {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { isOpen = true }
-        } label: {
+    /// Con un'arma scelta, accanto alla pallina resta una capsula con foto e nome (altrimenti non si vedrebbe cosa registri).
+    private func weaponChip(_ w: Weapon) -> some View {
+        Button(action: toggle) {
             HStack(spacing: 10) {
-                WeaponThumb(weapon: currentWeapon, size: 32)
+                WeaponThumb(weapon: w, size: 36)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(titleText)
+                    Text(w.name.isEmpty ? "Senza nome" : w.name)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.white)
                         .lineLimit(1)
-                    Text(subtitleText)
+                    Text(w.serial.isEmpty ? "Arma selezionata" : "matr. \(w.serial)")
                         .font(.caption)
                         .foregroundStyle(Palette.muted)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 14)
-            .frame(width: buttonWidth, height: 52)
+            .frame(width: chipWidth, height: Self.ballSize)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -111,7 +132,7 @@ struct WeaponPicker: View {
 
     private var rowCount: Int {
         store.config.calibers.reduce(0) { total, cal in
-            total + max(1, store.config.activeWeapons(for: cal.id).count)
+            total + store.config.activeWeapons(for: cal.id).count + 1   // +1 = "Senza arma"
         }
     }
 
@@ -164,23 +185,20 @@ struct WeaponPicker: View {
         .padding(.horizontal, 10)
         .padding(.top, 6)
 
-        if weapons.isEmpty {
-            PickerRow(weapon: nil,
+        PickerRow(weapon: nil,
+                  symbol: "scope",
+                  title: "Senza arma",
+                  subtitle: cal.name,
+                  selected: target.caliberID == cal.id && target.weaponID == nil) {
+            choose(EntryTarget(caliberID: cal.id, weaponID: nil))
+        }
+        ForEach(weapons) { w in
+            PickerRow(weapon: w,
                       symbol: "scope",
-                      title: "Senza arma",
-                      subtitle: cal.name,
-                      selected: target.caliberID == cal.id && target.weaponID == nil) {
-                choose(EntryTarget(caliberID: cal.id, weaponID: nil))
-            }
-        } else {
-            ForEach(weapons) { w in
-                PickerRow(weapon: w,
-                          symbol: "scope",
-                          title: w.name,
-                          subtitle: w.serial.isEmpty ? cal.name : "\(cal.name) · matr. \(w.serial)",
-                          selected: target.weaponID == w.id) {
-                    choose(EntryTarget(caliberID: cal.id, weaponID: w.id))
-                }
+                      title: w.name,
+                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name) · matr. \(w.serial)",
+                      selected: target.weaponID == w.id) {
+                choose(EntryTarget(caliberID: cal.id, weaponID: w.id))
             }
         }
     }

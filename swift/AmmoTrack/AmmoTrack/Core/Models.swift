@@ -208,7 +208,7 @@ nonisolated struct Config: Codable, Equatable, Sendable {
         Config(version: 1,
                totalLimit: 1000,
                calibers: [Caliber(id: "9x21", name: "9x21", limit: 600, allowsReload: true),
-                          Caliber(id: "22lr", name: ".22 LR", limit: 400, allowsReload: false)],
+                          Caliber(id: "22lr", name: "22 LR", limit: 400, allowsReload: false)],
                weapons: [])
     }
 
