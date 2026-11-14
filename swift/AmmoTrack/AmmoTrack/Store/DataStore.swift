@@ -1,0 +1,407 @@
+//
+//  DataStore.swift
+//  AmmoTrack
+//
+//  Lo "store" dell'app: legge e scrive movimenti.csv e armi.json, espone i movimenti, il registro con i saldi
+//  e la configurazione. Rilegge i file da solo quando cambiano (controllo ogni secondo, come nell'altra app),
+//  quindi anche le modifiche fatte da fuori (iCloud, terminale, Numbers) compaiono subito.
+//
+//  Ogni scrittura: rilegge il file da disco, applica la modifica e lo riscrive in modo atomico
+//  (così non si perdono righe aggiunte altrove nel frattempo), con copia di sicurezza prima.
+//  Se un file non si riesce a leggere, l'app NON lo sovrascrive mai.
+//
+
+import Foundation
+import Combine
+import CoreGraphics
+
+@MainActor
+final class DataStore: ObservableObject {
+
+    // MARK: Stato pubblicato
+
+    @Published private(set) var config: Config = Config.standard
+    @Published private(set) var movements: [Movement] = []
+    @Published private(set) var ledger: Ledger = Ledger(movements: [])
+    @Published private(set) var folderURL: URL? = nil
+    /// true finché non c'è una cartella dei dati (compare la schermata di scelta).
+    @Published private(set) var needsFolder = false
+    /// Problema di lettura o scrittura, da mostrare in rosso.
+    @Published private(set) var message: String? = nil
+    /// Avviso non bloccante (es. righe del CSV ignorate).
+    @Published private(set) var notice: String? = nil
+    /// Id dell'ultimo movimento inserito in questa sessione: serve al pulsante "Annulla".
+    @Published private(set) var lastAddedID: String? = nil
+
+    // MARK: Stato interno
+
+    private var files: ArchiveFiles? = nil
+    private var started = false
+    private var movementsStamp: FileStamp? = nil
+    private var configStamp: FileStamp? = nil
+    private var movementsWritable = true
+    private var configWritable = true
+    private var skippedRows = 0
+    private var configProblem: String? = nil
+    private var movementsProblem: String? = nil
+    private var imageCache: [String: CGImage] = [:]
+
+    init() {}
+
+    // MARK: Avvio e cartella
+
+    /// Apre la cartella salvata (o quella predefinita). Si può chiamare più volte.
+    func start() {
+        guard !started else { return }
+        started = true
+        if let url = FolderAccess.restore() {
+            open(url)
+        } else if let url = FolderAccess.defaultFolder {
+            open(url)
+        } else {
+            needsFolder = true
+        }
+    }
+
+    /// Usa una nuova cartella (scelta dall'utente) e la ricorda.
+    func chooseFolder(_ url: URL) {
+        FolderAccess.remember(url)
+        started = true
+        imageCache.removeAll()
+        lastAddedID = nil
+        open(url)
+    }
+
+    private func open(_ url: URL) {
+        folderURL = url
+        needsFolder = false
+        let f = ArchiveFiles(folder: url)
+        do {
+            try f.prepare()
+        } catch {
+            files = nil
+            movementsProblem = describe(error, path: url.path)
+            updateMessage()
+            return
+        }
+        files = f
+        movementsStamp = nil
+        configStamp = nil
+        movementsProblem = nil
+        configProblem = nil
+        refresh(force: true)
+    }
+
+    // MARK: Lettura
+
+    /// Rilegge i file solo se sono cambiati (o se force == true).
+    func refresh(force: Bool = false) {
+        guard let f = files else { return }
+
+        let cs = f.stamp(of: f.configURL)
+        if force || cs != configStamp {
+            loadConfig(f)
+            configStamp = f.stamp(of: f.configURL)
+        }
+
+        let ms = f.stamp(of: f.movementsURL)
+        if force || ms != movementsStamp {
+            loadMovements(f)
+            movementsStamp = f.stamp(of: f.movementsURL)
+        }
+        updateMessage()
+    }
+
+    private func loadConfig(_ f: ArchiveFiles) {
+        do {
+            if let c = try f.loadConfig() {
+                if c != config { config = c }
+            } else {
+                // Primo avvio (o file vuoto): scrivo la configurazione predefinita.
+                let standard = Config.standard
+                try f.saveConfig(standard, backup: false)
+                config = standard
+            }
+            configWritable = true
+            configProblem = nil
+        } catch {
+            configWritable = false
+            configProblem = "armi.json non è leggibile (\(error.localizedDescription)). Non lo modifico: correggilo o ripristina una copia da Backup/."
+        }
+    }
+
+    private func loadMovements(_ f: ArchiveFiles) {
+        do {
+            guard let text = try f.loadMovementsText() else {
+                // File mancante: lo creo con la sola intestazione.
+                try f.saveMovements(text: MovementCSV.encode([], weapons: []), backup: .none)
+                skippedRows = 0
+                movementsWritable = true
+                movementsProblem = nil
+                notice = nil
+                apply(movements: [])
+                return
+            }
+            let load = MovementCSV.decode(text, weapons: config.weapons)
+            if !load.isValid {
+                movementsWritable = false
+                movementsProblem = load.notes.first ?? "movimenti.csv non è interpretabile."
+                apply(movements: [])
+                return
+            }
+            movementsWritable = true
+            movementsProblem = nil
+            skippedRows = load.skipped
+            if load.skipped > 0 {
+                let first = load.notes.first ?? ""
+                notice = "\(load.skipped) righe di movimenti.csv non valide sono state ignorate. \(first)"
+            } else {
+                notice = nil
+            }
+            apply(movements: load.movements)
+            registerUnknownCalibers()
+        } catch {
+            movementsWritable = false
+            movementsProblem = describe(error, path: f.movementsURL.path)
+        }
+    }
+
+    private func apply(movements list: [Movement]) {
+        movements = list
+        ledger = Ledger(movements: list)
+    }
+
+    private func updateMessage() {
+        let m = movementsProblem ?? configProblem
+        if message != m { message = m }
+    }
+
+    /// Se il CSV contiene calibri che non sono in armi.json (es. aggiunti a mano) li registro, senza limite.
+    private func registerUnknownCalibers() {
+        let known = Set(config.calibers.map { $0.id })
+        let unknown = Set(movements.map { $0.caliberID }).subtracting(known)
+        guard !unknown.isEmpty, configWritable else { return }
+        _ = mutateConfig { cfg in
+            for id in unknown.sorted() {
+                cfg.calibers.append(Caliber(id: id, name: id, limit: nil, allowsReload: true))
+            }
+            return nil
+        }
+    }
+
+    // MARK: Movimenti
+
+    /// Rilegge il CSV da disco, applica `change`, lo riscrive in modo atomico (con copia di sicurezza).
+    /// Restituisce un messaggio d'errore, oppure nil se è andato tutto bene.
+    private func mutateMovements(backup: BackupMode, _ change: (inout [Movement]) -> String?) -> String? {
+        guard let f = files else { return "Cartella dei dati non disponibile." }
+        guard movementsWritable else {
+            return "movimenti.csv non è leggibile: non lo modifico per non perdere dati."
+        }
+
+        var current: [Movement] = []
+        do {
+            if let text = try f.loadMovementsText() {
+                let load = MovementCSV.decode(text, weapons: config.weapons)
+                guard load.isValid else { return load.notes.first ?? "movimenti.csv non è interpretabile." }
+                current = load.movements
+                skippedRows = load.skipped
+            }
+        } catch {
+            return describe(error, path: f.movementsURL.path)
+        }
+
+        // File vuoto ma in memoria ci sono dati: qualcosa non va (es. sincronizzazione iCloud in corso).
+        if current.isEmpty && !movements.isEmpty && skippedRows == 0 {
+            return "Il file dei movimenti risulta vuoto mentre l'app ha dei dati: non lo sovrascrivo. Aspetta la sincronizzazione o riavvia l'app."
+        }
+
+        if let error = change(&current) { return error }
+
+        // Se c'erano righe illeggibili (che nella riscrittura andrebbero perse) la copia è sempre obbligatoria.
+        let mode: BackupMode = skippedRows > 0 ? .always : backup
+        do {
+            try f.saveMovements(text: MovementCSV.encode(current, weapons: config.weapons), backup: mode)
+        } catch {
+            return describe(error, path: f.movementsURL.path)
+        }
+        apply(movements: current)
+        movementsStamp = f.stamp(of: f.movementsURL)
+        registerUnknownCalibers()
+        return nil
+    }
+
+    /// Aggiunge un movimento in fondo al registro.
+    @discardableResult
+    func add(_ m: Movement, trackUndo: Bool = true) -> String? {
+        let error = mutateMovements(backup: .dailyIfNeeded) { list in
+            list.append(m)
+            return nil
+        }
+        if error == nil && trackUndo { lastAddedID = m.id }
+        return error
+    }
+
+    func update(_ m: Movement) -> String? {
+        mutateMovements(backup: .always) { list in
+            guard let i = list.firstIndex(where: { $0.id == m.id }) else { return "Il movimento non esiste più." }
+            list[i] = m
+            return nil
+        }
+    }
+
+    func delete(ids: Set<String>) -> String? {
+        let error = mutateMovements(backup: .always) { list in
+            list.removeAll { ids.contains($0.id) }
+            return nil
+        }
+        if error == nil, let last = lastAddedID, ids.contains(last) { lastAddedID = nil }
+        return error
+    }
+
+    /// Annulla l'ultimo movimento inserito in questa sessione.
+    func undoLastAdded() -> String? {
+        guard let id = lastAddedID else { return nil }
+        let error = delete(ids: [id])
+        if error == nil { lastAddedID = nil }
+        return error
+    }
+
+    /// Importa dei movimenti (es. dal foglio Numbers). Se `replacingPrefix` è indicato, prima toglie i movimenti
+    /// con quel prefisso di id (una precedente importazione dello stesso foglio): non si duplica nulla.
+    func importMovements(_ list: [Movement], replacingPrefix: String?) -> String? {
+        mutateMovements(backup: .always) { current in
+            if let prefix = replacingPrefix {
+                current.removeAll { $0.id.hasPrefix(prefix) }
+            }
+            let existing = Set(current.map { $0.id })
+            current.append(contentsOf: list.filter { !existing.contains($0.id) })
+            return nil
+        }
+    }
+
+    // MARK: Configurazione (calibri, limiti, armi)
+
+    /// Rilegge armi.json da disco, applica `change` e lo riscrive (con copia di sicurezza).
+    func mutateConfig(_ change: (inout Config) -> String?) -> String? {
+        guard let f = files else { return "Cartella dei dati non disponibile." }
+        guard configWritable else { return "armi.json non è leggibile: non lo modifico per non perdere dati." }
+
+        var current = config
+        do {
+            if let c = try f.loadConfig() { current = c }
+        } catch {
+            return "armi.json non è leggibile (\(error.localizedDescription))."
+        }
+        if let error = change(&current) { return error }
+        do {
+            try f.saveConfig(current, backup: true)
+        } catch {
+            return describe(error, path: f.configURL.path)
+        }
+        config = current
+        configStamp = f.stamp(of: f.configURL)
+        return nil
+    }
+
+    func isCaliberUsed(_ id: String) -> Bool {
+        movements.contains { $0.caliberID == id } || config.weapons.contains { $0.caliberID == id }
+    }
+
+    func movementCount(forWeapon id: String) -> Int {
+        movements.filter { $0.weaponID == id }.count
+    }
+
+    // MARK: Armi e immagini
+
+    /// Salva (o crea) un'arma. `newImage` è un JPEG già pronto; `removeImage` toglie quella attuale.
+    func saveWeapon(_ weapon: Weapon, newImage: Data?, removeImage: Bool) -> String? {
+        guard let f = files else { return "Cartella dei dati non disponibile." }
+        var w = weapon
+        let previousFile = config.weapon(weapon.id)?.imageFile
+
+        if let data = newImage {
+            let name = "\(w.id)-\(Int(Date().timeIntervalSince1970)).jpg"
+            do {
+                try f.writeImage(data, name: name)
+            } catch {
+                return describe(error, path: f.imagesURL.path)
+            }
+            w.imageFile = name
+        } else if removeImage {
+            w.imageFile = nil
+        }
+
+        let saved = w
+        let error = mutateConfig { cfg in
+            if let i = cfg.weapons.firstIndex(where: { $0.id == saved.id }) {
+                cfg.weapons[i] = saved
+            } else {
+                cfg.weapons.append(saved)
+            }
+            return nil
+        }
+
+        if error == nil {
+            if let old = previousFile, old != saved.imageFile {
+                f.deleteImage(name: old)
+                imageCache = imageCache.filter { !$0.key.hasPrefix(old + "@") }
+            }
+        } else if newImage != nil, let name = saved.imageFile {
+            f.deleteImage(name: name)         // salvataggio fallito: tolgo l'immagine appena scritta
+        }
+        return error
+    }
+
+    /// Elimina un'arma solo se non ha movimenti; altrimenti va archiviata.
+    func deleteWeapon(_ id: String) -> String? {
+        let n = movementCount(forWeapon: id)
+        if n > 0 {
+            return "L'arma ha \(n) movimenti nel registro: non si può eliminare. Archiviala per toglierla dal selettore."
+        }
+        let image = config.weapon(id)?.imageFile
+        let error = mutateConfig { cfg in
+            cfg.weapons.removeAll { $0.id == id }
+            return nil
+        }
+        if error == nil, let image {
+            files?.deleteImage(name: image)
+        }
+        return error
+    }
+
+    func setArchived(_ id: String, _ archived: Bool) -> String? {
+        mutateConfig { cfg in
+            guard let i = cfg.weapons.firstIndex(where: { $0.id == id }) else { return "Arma non trovata." }
+            cfg.weapons[i].isArchived = archived
+            return nil
+        }
+    }
+
+    /// Foto dell'arma ridimensionata (con cache in memoria).
+    func image(for weapon: Weapon?, maxPixel: Int) -> CGImage? {
+        guard let weapon, let name = weapon.imageFile, let f = files else { return nil }
+        let key = "\(name)@\(maxPixel)"
+        if let cached = imageCache[key] { return cached }
+        let url = f.imagesURL.appendingPathComponent(name)
+        guard let image = ImageTools.cgImage(fromFile: url, maxPixel: maxPixel) else { return nil }
+        imageCache[key] = image
+        return image
+    }
+
+    // MARK: Errori
+
+    private func describe(_ error: Error, path: String) -> String {
+        if let e = error as? CocoaError {
+            switch e.code {
+            case .fileReadNoPermission, .fileWriteNoPermission:
+                return "Permesso negato su \(path). Con App Sandbox attiva imposta «User Selected File» su Lettura/Scrittura e scegli di nuovo la cartella (Impostazioni ▸ Cambia cartella); oppure rimuovi App Sandbox da Signing & Capabilities."
+            case .fileReadNoSuchFile:
+                return "File non trovato: \(path)"
+            default:
+                break
+            }
+        }
+        return "\(error.localizedDescription) (\(path))"
+    }
+}
