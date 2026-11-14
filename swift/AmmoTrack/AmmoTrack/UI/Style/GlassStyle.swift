@@ -67,6 +67,16 @@ extension View {
             self
         }
     }
+    /// Il vetro che entra o esce si stacca da quello vicino (la goccia di Spotlight) invece di comparire sul posto.
+    /// Va messo sulla vista che compare o scompare, dentro il GlassContainer. Prima di macOS 26 non fa nulla.
+    @ViewBuilder
+    func glassDropTransition() -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffectTransition(.matchedGeometry)
+        } else {
+            self
+        }
+    }
 }
 
 /// Contenitore che fa fondere e trasformare il vetro delle viste che contiene (macOS 26);

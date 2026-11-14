@@ -74,10 +74,18 @@ struct LimitBar: View {
 // MARK: - Immagini delle armi
 
 /// Miniatura rotonda dell'arma (o un mirino se non c'è la foto).
+/// Miniatura rotonda dell'arma. Senza foto mostra la cartuccia del suo calibro.
 struct WeaponThumb: View {
     @EnvironmentObject var store: DataStore
     let weapon: Weapon?
+    /// Serve a scegliere la cartuccia giusta quando non c'è un'arma (solo calibro).
+    var caliberID: String? = nil
     var size: CGFloat = 34
+
+    private var cartridge: CartridgeStyle {
+        let id = weapon?.caliberID ?? caliberID ?? ""
+        return store.config.caliber(id)?.cartridgeStyle ?? .pistol
+    }
 
     var body: some View {
         let pixels = Int(size * 3)
@@ -88,8 +96,7 @@ struct WeaponThumb: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                Image(systemName: "scope")
-                    .font(.system(size: size * 0.46, weight: .medium))
+                CartridgeIcon(style: cartridge, height: size * 0.66)
                     .foregroundStyle(Palette.muted)
             }
         }
@@ -111,6 +118,9 @@ struct WeaponImage: View {
         if removed { return nil }
         return store.image(for: weapon, maxPixel: maxPixel)
     }
+    private var cartridge: CartridgeStyle {
+        store.config.caliber(weapon?.caliberID ?? "")?.cartridgeStyle ?? .pistol
+    }
 
     var body: some View {
         ZStack {
@@ -123,8 +133,7 @@ struct WeaponImage: View {
                     .scaledToFill()
             } else {
                 VStack(spacing: 6) {
-                    Image(systemName: "scope")
-                        .font(.system(size: 40, weight: .light))
+                    CartridgeIcon(style: cartridge, height: 46)
                     Text("Nessuna immagine")
                         .font(.caption)
                 }
@@ -151,22 +160,91 @@ struct ErrorLine: View {
         }
     }
 }
+// MARK: - Cartucce
+
+/// Quale cartuccia disegnare. Un calibro non ricaricabile (il 22 LR) è a percussione anulare: bossolo con l'orlo.
+enum CartridgeStyle {
+    case pistol     // 9x21 e simili: bossolo dritto con la gola dell'estrattore, palla ogivale più stretta
+    case rimfire    // 22 LR: orlo largo alla base, palla spessa come il bossolo
+
+    /// Misure reali in mm (lunghezza, larghezza): servono solo alle proporzioni.
+    fileprivate var length: CGFloat { self == .pistol ? 29.5 : 25.4 }
+    fileprivate var width: CGFloat { self == .pistol ? 10.0 : 7.6 }
+}
+
+extension Caliber {
+    var cartridgeStyle: CartridgeStyle { allowsReload ? .pistol : .rimfire }
+}
+
 /// Cartuccia stilizzata (SF Symbols non ne ha una). Prende il colore da foregroundStyle.
+/// Le due hanno la stessa scala: il 22 LR risulta più corto e stretto del 9x21, come nella realtà.
 struct CartridgeIcon: View {
+    var style: CartridgeStyle = .pistol
     var height: CGFloat = 24
 
+    private var unit: CGFloat { height / 29.5 }
+    private var width: CGFloat { style.width * unit }
+
+    /// Punto in mm: x dal centro, y dall'alto della cartuccia.
+    private func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+        CGPoint(x: width / 2 + x * unit, y: (height - style.length * unit) / 2 + y * unit)
+    }
+
     var body: some View {
-        let w = height * 0.40
-        VStack(spacing: 1) {
-            UnevenRoundedRectangle(topLeadingRadius: w / 2, bottomLeadingRadius: 1,
-                                   bottomTrailingRadius: 1, topTrailingRadius: w / 2)
-                .frame(width: w, height: height * 0.36)
-            RoundedRectangle(cornerRadius: 1)
-                .frame(width: w, height: height * 0.50)
-                .opacity(0.65)
-            RoundedRectangle(cornerRadius: 1)
-                .frame(width: w * 1.15, height: height * 0.10)
+        ZStack {
+            bulletPath.fill()
+            casePath.fill().opacity(0.62)
         }
-        .frame(height: height)
+        .frame(width: width, height: height)
+    }
+
+    private var bulletPath: Path {
+        var p = Path()
+        switch style {
+        case .pistol:
+            p.move(to: pt(-4.4, 8.6))
+            p.addLine(to: pt(-4.4, 6.3))
+            p.addCurve(to: pt(0, 0), control1: pt(-4.4, 2.7), control2: pt(-2, 0))
+            p.addCurve(to: pt(4.4, 6.3), control1: pt(2, 0), control2: pt(4.4, 2.7))
+            p.addLine(to: pt(4.4, 8.6))
+        case .rimfire:
+            p.move(to: pt(-2.85, 9.7))
+            p.addLine(to: pt(-2.85, 6))
+            p.addCurve(to: pt(0, 0), control1: pt(-2.85, 2.2), control2: pt(-1.3, 0))
+            p.addCurve(to: pt(2.85, 6), control1: pt(1.3, 0), control2: pt(2.85, 2.2))
+            p.addLine(to: pt(2.85, 9.7))
+        }
+        p.closeSubpath()
+        return p
+    }
+
+    private var casePath: Path {
+        var p = Path()
+        switch style {
+        case .pistol:
+            p.move(to: pt(-4.8, 9.2))
+            p.addLine(to: pt(-4.95, 27.2))
+            p.addLine(to: pt(-4.1, 27.2))
+            p.addLine(to: pt(-4.1, 28.3))
+            p.addLine(to: pt(-4.98, 28.3))
+            p.addLine(to: pt(-4.98, 29.5))
+            p.addLine(to: pt(4.98, 29.5))
+            p.addLine(to: pt(4.98, 28.3))
+            p.addLine(to: pt(4.1, 28.3))
+            p.addLine(to: pt(4.1, 27.2))
+            p.addLine(to: pt(4.95, 27.2))
+            p.addLine(to: pt(4.8, 9.2))
+        case .rimfire:
+            p.move(to: pt(-2.85, 10.5))
+            p.addLine(to: pt(-2.85, 24))
+            p.addLine(to: pt(-3.8, 24))
+            p.addLine(to: pt(-3.8, 25.4))
+            p.addLine(to: pt(3.8, 25.4))
+            p.addLine(to: pt(3.8, 24))
+            p.addLine(to: pt(2.85, 24))
+            p.addLine(to: pt(2.85, 10.5))
+        }
+        p.closeSubpath()
+        return p
     }
 }

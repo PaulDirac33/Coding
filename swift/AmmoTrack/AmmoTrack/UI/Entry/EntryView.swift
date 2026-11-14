@@ -165,8 +165,8 @@ struct EntryView: View {
     /// Spazio fisso per il tasto dell'arma: quando si apre il pannello, questo sporge sopra il resto.
     var weaponSlot: some View {
         Color.clear
-            .frame(width: WeaponPicker.ballSize, height: WeaponPicker.ballSize)
-            .overlay(alignment: .topLeading) {
+            .frame(width: 320, height: 52)
+            .overlay(alignment: .top) {
                 WeaponPicker(target: targetBinding, isOpen: $pickerOpen, onManage: onManageWeapons)
             }
             .zIndex(10)
