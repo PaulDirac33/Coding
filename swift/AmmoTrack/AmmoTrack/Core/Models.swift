@@ -166,6 +166,8 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
     var notes: String
     /// Nome del file immagine dentro la cartella "Immagini" (nil = nessuna immagine).
     var imageFile: String?
+    /// File PNG (con trasparenza) del logo della casa, dentro "Immagini" (nil = nessun logo).
+    var logoFile: String?
     /// Un'arma archiviata sparisce dal selettore ma conserva lo storico.
     var isArchived: Bool
 
@@ -175,6 +177,7 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
          serial: String = "",
          notes: String = "",
          imageFile: String? = nil,
+         logoFile: String? = nil,
          isArchived: Bool = false) {
         self.id = id
         self.name = name
@@ -182,10 +185,11 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
         self.serial = serial
         self.notes = notes
         self.imageFile = imageFile
+        self.logoFile = logoFile
         self.isArchived = isArchived
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, caliberID, serial, notes, imageFile, isArchived }
+    enum CodingKeys: String, CodingKey { case id, name, caliberID, serial, notes, imageFile, logoFile, isArchived }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -195,6 +199,7 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
         self.serial = try c.decodeIfPresent(String.self, forKey: .serial) ?? ""
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         self.imageFile = try c.decodeIfPresent(String.self, forKey: .imageFile)
+        self.logoFile = try c.decodeIfPresent(String.self, forKey: .logoFile)
         self.isArchived = try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     }
 }

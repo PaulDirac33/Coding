@@ -73,35 +73,30 @@ struct LimitBar: View {
 
 // MARK: - Immagini delle armi
 
-/// Miniatura rotonda dell'arma (o un mirino se non c'è la foto).
-/// Miniatura rotonda dell'arma. Senza foto mostra la cartuccia del suo calibro.
+/// Miniatura dell'arma: il logo (PNG con trasparenza) per intero e centrato.
+/// Senza logo mostra l'emoji della pistola, in grigio, dentro un cerchio.
 struct WeaponThumb: View {
     @EnvironmentObject var store: DataStore
     let weapon: Weapon?
-    /// Serve a scegliere la cartuccia giusta quando non c'è un'arma (solo calibro).
-    var caliberID: String? = nil
+    var caliberID: String? = nil        // non serve più, resta per non toccare le chiamate esistenti
     var size: CGFloat = 34
-
-    private var cartridge: CartridgeStyle {
-        let id = weapon?.caliberID ?? caliberID ?? ""
-        return store.config.caliber(id)?.cartridgeStyle ?? .pistol
-    }
 
     var body: some View {
         let pixels = Int(size * 3)
-        ZStack {
-            Circle().fill(Color.white.opacity(0.10))
-            if let img = store.image(for: weapon, maxPixel: pixels) {
-                Image(decorative: img, scale: 1)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                CartridgeIcon(style: cartridge, height: size * 0.66)
-                    .foregroundStyle(Palette.muted)
+        if let logo = store.logo(for: weapon, maxPixel: pixels) {
+            Image(decorative: logo, scale: 1)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            ZStack {
+                Text("🔫")
+                    .font(.system(size: size * 0.5))
+                    .grayscale(1)
+                    .opacity(0.8)
             }
+            .frame(width: size, height: size)
         }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
     }
 }
 
@@ -157,6 +152,32 @@ struct ErrorLine: View {
             .font(.caption)
             .foregroundStyle(Palette.danger)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+/// Logo dell'arma, per intero e centrato, con la trasparenza. `data` è un logo scelto ma non ancora salvato.
+struct WeaponLogo: View {
+    @EnvironmentObject var store: DataStore
+    var weapon: Weapon? = nil
+    var data: Data? = nil
+    var removed = false
+    var maxPixel = 400
+
+    private var resolved: CGImage? {
+        if let data { return ImageTools.cgImage(from: data, maxPixel: maxPixel) }
+        if removed { return nil }
+        return store.logo(for: weapon, maxPixel: maxPixel)
+    }
+
+    var body: some View {
+        if let img = resolved {
+            Image(decorative: img, scale: 1)
+                .resizable()
+                .scaledToFit()
+        } else {
+            Text("Nessun logo")
+                .font(.caption)
+                .foregroundStyle(Color.white.opacity(0.30))
         }
     }
 }

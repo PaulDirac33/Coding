@@ -26,6 +26,17 @@ nonisolated enum ImageTools {
         guard CGImageDestinationFinalize(destination) else { return nil }
         return output as Data
     }
+    /// Immagine qualunque → PNG con il lato maggiore di al più `maxPixel` pixel. Mantiene la trasparenza.
+    static func pngData(from data: Data, maxPixel: Int) -> Data? {
+        guard let cg = cgImage(from: data, maxPixel: maxPixel) else { return nil }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, cg, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
+    }
 
     static func cgImage(from data: Data, maxPixel: Int) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }

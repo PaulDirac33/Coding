@@ -22,6 +22,9 @@ struct WeaponEditor: View {
     @State private var notes: String
     @State private var newImage: Data? = nil
     @State private var removeImage = false
+    @State private var newLogo: Data? = nil
+    @State private var removeLogo = false
+    @State private var pickingLogo = false      // il selettore di file è unico: questo dice se sceglie foto o logo
     @State private var choosingImage = false
     @State private var error: String? = nil
     @State private var confirmDelete = false
@@ -44,6 +47,11 @@ struct WeaponEditor: View {
         if removeImage { return false }
         return original?.imageFile != nil
     }
+    private var hasLogo: Bool {
+        if newLogo != nil { return true }
+        if removeLogo { return false }
+        return original?.logoFile != nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,11 +68,31 @@ struct WeaponEditor: View {
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     HStack {
-                        Button(hasImage ? "Cambia foto…" : "Scegli foto…") { choosingImage = true }
+                        Button(hasImage ? "Cambia foto…" : "Scegli foto…") {
+                            pickingLogo = false
+                            choosingImage = true }
                         if hasImage {
                             Button("Rimuovi foto") {
                                 newImage = nil
                                 removeImage = true
+                            }
+                        }
+                    }
+                }
+                Section("Logo (compare nel banner di Inserimento)") {
+                    WeaponLogo(weapon: original, data: newLogo, removed: removeLogo)
+                        .frame(height: 90)
+                        .frame(maxWidth: .infinity)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+                    HStack {
+                        Button(hasLogo ? "Cambia logo…" : "Scegli logo…") {
+                            pickingLogo = true
+                            choosingImage = true
+                        }
+                        if hasLogo {
+                            Button("Rimuovi logo") {
+                                newLogo = nil
+                                removeLogo = true
                             }
                         }
                     }
@@ -118,7 +146,15 @@ struct WeaponEditor: View {
         .fileImporter(isPresented: $choosingImage, allowedContentTypes: [.image]) { result in
             switch result {
             case .success(let url):
-                if let jpeg = ImagePicking.jpeg(from: url) {
+                if pickingLogo {
+                    if let png = ImagePicking.png(from: url) {
+                        newLogo = png
+                        removeLogo = false
+                        error = nil
+                    } else {
+                        error = "Non riesco a leggere quell'immagine."
+                    }
+                } else if let jpeg = ImagePicking.jpeg(from: url) {
                     newImage = jpeg
                     removeImage = false
                     error = nil
@@ -157,7 +193,8 @@ struct WeaponEditor: View {
         w.serial = serial.trimmingCharacters(in: .whitespacesAndNewlines)
         w.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if let failure = store.saveWeapon(w, newImage: newImage, removeImage: removeImage) {
+        if let failure = store.saveWeapon(w, newImage: newImage, removeImage: removeImage,
+                                          newLogo: newLogo, removeLogo: removeLogo) {
             error = failure
         } else {
             dismiss()

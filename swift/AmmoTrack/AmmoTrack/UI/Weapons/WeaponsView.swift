@@ -17,6 +17,13 @@ nonisolated enum ImagePicking {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return ImageTools.jpegData(from: data, maxPixel: 1200)
     }
+    /// Come `jpeg`, ma PNG: serve ai loghi, per non perdere lo sfondo trasparente.
+    static func png(from url: URL) -> Data? {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return ImageTools.pngData(from: data, maxPixel: 512)
+    }
 }
 
 struct WeaponEditorTarget: Identifiable {
