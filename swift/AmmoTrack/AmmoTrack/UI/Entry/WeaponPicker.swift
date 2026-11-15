@@ -110,7 +110,7 @@ struct WeaponPicker: View {
         guard !target.caliberID.isEmpty else { return "Aggiungi un calibro dalle Impostazioni" }
         guard let w = currentWeapon else { return "Senza arma" }
         var parts = [store.config.caliberName(target.caliberID)]
-        if !w.serial.isEmpty { parts.append("matr. \(w.serial)") }
+        if !w.serial.isEmpty { parts.append(w.serial) }
         return parts.joined(separator: Self.separator)
     }
 
@@ -141,6 +141,7 @@ struct WeaponPicker: View {
                     .font(.caption)
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
+                    .offset(y: 2)
             }
             Image(systemName: "chevron.up.chevron.down")
                 .font(.system(size: 11, weight: .semibold))
@@ -233,7 +234,7 @@ struct WeaponPicker: View {
                       space: rowsSpace,
                       weapon: w,
                       title: w.name,
-                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)matr. \(w.serial)")
+                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)\(w.serial)")
         }
     }
 
