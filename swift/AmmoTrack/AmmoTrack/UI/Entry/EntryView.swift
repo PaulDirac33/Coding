@@ -104,10 +104,8 @@ struct EntryView: View {
     }
 
     var canCommit: Bool { quantity != nil && !target.caliberID.isEmpty }
-    /// Uno sparo vuole l'arma, tranne se il calibro non ne ha nessuna configurata.
-    var canShoot: Bool {
-        canCommit && (target.weaponID != nil || store.config.activeWeapons(for: target.caliberID).isEmpty)
-    }
+    /// Le aggiunte (acquisti, ricariche) non hanno un'arma: si fanno solo con "Senza arma".
+    var canAdd: Bool { canCommit && target.weaponID == nil }
 
     // MARK: Corpo
 
@@ -198,7 +196,7 @@ struct EntryView: View {
             .glassProminentButton()
             .tint(provenance.color)
             .controlSize(.large)
-            .disabled(kind == .shot ? !canShoot : !canCommit)
+            .disabled(kind == .shot ? !canCommit : !canAdd)
 
             Text(title)
                 .font(.caption)
