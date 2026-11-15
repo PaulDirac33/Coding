@@ -140,6 +140,9 @@ fileprivate struct DarkMark {
 struct CartridgeIcon: View {
     var style: CartridgeStyle = .pistol
     var height: CGFloat = 24
+    /// true = cartuccia coricata: ruotata di 90° in senso antiorario (punta a sinistra).
+    /// L'ingombro diventa `height` in larghezza e lo spessore della cartuccia in altezza.
+    var horizontal = false
 
     /// Spazio (mm) fra la bocca del bossolo e la palla: è la sottile riga che le separa, come nel disegno di prima.
     /// Mettilo a 0 per la palla incastrata nel bossolo senza stacco.
@@ -253,7 +256,9 @@ struct CartridgeIcon: View {
                 ForEach(lights.indices, id: \.self) { i in
                     let band = lights[i]
                     Rectangle()
-                        .fill(LinearGradient(gradient: lighting, startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(gradient: lighting,
+                                             startPoint: horizontal ? .trailing : .leading,
+                                             endPoint: horizontal ? .leading : .trailing))
                         .frame(width: band.radius * 2 * unit, height: (band.y1 - band.y0) * unit)
                         .position(x: width / 2, y: top + (band.y0 + band.y1) / 2 * unit)
                 }
@@ -272,11 +277,20 @@ struct CartridgeIcon: View {
     // MARK: Corpo
 
     var body: some View {
-        ZStack {
+        let drawing = ZStack {
             piece(bulletPath, tint: 1.0, lights: bulletLights, marks: bulletMarks)
             piece(casePath, tint: 0.62, lights: caseLights, marks: caseMarks)
         }
         .frame(width: width, height: height)
+
+        if horizontal {
+            // rotationEffect non cambia l'ingombro: lo scambio io, altrimenti il layout resterebbe verticale.
+            drawing
+                .rotationEffect(.degrees(-90))      // negativo = antiorario
+                .frame(width: height, height: width)
+        } else {
+            drawing
+        }
     }
 }
 

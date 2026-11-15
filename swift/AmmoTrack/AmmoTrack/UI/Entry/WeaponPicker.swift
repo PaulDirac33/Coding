@@ -22,6 +22,8 @@ struct WeaponPicker: View {
 
     private let buttonWidth: CGFloat = 320
     private let panelWidth: CGFloat = 340
+    private let compactHeight: CGFloat = 44             // altezza del tasto quando c'è solo il calibro
+    private let compactCartridgeLength: CGFloat = 64    // lunghezza della cartuccia orizzontale (in punti)
 
     private static var morphs: Bool {
         if #available(macOS 26.0, *) { return true }
@@ -66,6 +68,14 @@ struct WeaponPicker: View {
     // MARK: Tasto
 
     private var currentWeapon: Weapon? { store.config.weapon(target.weaponID) }
+    /// Solo il calibro, nessuna arma: il tasto si riduce.
+    private var isCaliberOnly: Bool {
+        currentWeapon == nil && !target.caliberID.isEmpty
+    }
+
+    private var cartridgeStyle: CartridgeStyle {
+        store.config.caliber(target.caliberID)?.cartridgeStyle ?? .pistol
+    }
 
     /// Con un'arma: il suo nome. Senza arma: il nome esteso del calibro.
     private var titleText: String {
@@ -87,28 +97,56 @@ struct WeaponPicker: View {
         Button {
             withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { isOpen = true }
         } label: {
-            HStack(spacing: 10) {
-                WeaponThumb(weapon: currentWeapon, caliberID: target.caliberID, size: 32)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(titleText)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .lineLimit(1)
-                    Text(subtitleText)
-                        .font(.caption)
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Palette.muted)
+            if isCaliberOnly {
+                compactLabel
+            } else {
+                fullLabel
             }
-            .padding(.horizontal, 14)
-            .frame(width: buttonWidth, height: 52)
-            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Con un'arma: miniatura, nome e matricola, a larghezza fissa (come prima).
+    private var fullLabel: some View {
+        HStack(spacing: 10) {
+            WeaponThumb(weapon: currentWeapon, caliberID: target.caliberID, size: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(titleText)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                Text(subtitleText)
+                    .font(.caption)
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+        }
+        .padding(.horizontal, 14)
+        .frame(width: buttonWidth, height: 52)
+        .contentShape(Capsule())
+    }
+
+    /// Solo il calibro: cartuccia orizzontale grande + nome. Nessuna larghezza fissa, quindi il tasto
+    /// si stringe attorno al contenuto (e resta centrato, perché lo slot in EntryView centra il tasto).
+    private var compactLabel: some View {
+        HStack(spacing: 14) {
+            CartridgeIcon(style: cartridgeStyle, height: compactCartridgeLength, horizontal: true)
+                .foregroundStyle(Palette.muted)
+            Text(titleText)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+        }
+        .padding(.horizontal, 18)
+        .frame(height: compactHeight)
+        .contentShape(Capsule())
     }
 
     // MARK: Banner
@@ -196,13 +234,14 @@ struct WeaponPicker: View {
 }
 
 /// Una riga del banner: miniatura, nome, dettaglio, segno di spunta se è quella scelta.
+/// La riga del solo calibro (nessuna arma) è più compatta: cartuccia orizzontale e «Senza arma» a fianco del nome.
 private struct PickerRow: View {
     let weapon: Weapon?
     let symbol: String
     let title: String
     let subtitle: String
     let selected: Bool
-    var cartridge: CartridgeStyle? = nil     // se c'è, al posto del simbolo si disegna la cartuccia
+    var cartridge: CartridgeStyle? = nil     // se c'è, è la riga del solo calibro: si disegna la cartuccia
     let action: () -> Void
 
     @State private var hovering = false
@@ -211,35 +250,65 @@ private struct PickerRow: View {
         selected ? 0.12 : (hovering ? 0.07 : 0)
     }
 
+    /// true per la riga del solo calibro (nessuna arma, con la cartuccia).
+    private var isCaliberRow: Bool {
+        weapon == nil && cartridge != nil
+    }
+
+    /// A sinistra: foto dell'arma, oppure cartuccia orizzontale (solo calibro), oppure un simbolo («Gestisci armi…»).
+    @ViewBuilder
+    private var iconView: some View {
+        if weapon != nil {
+            WeaponThumb(weapon: weapon, size: 34)
+        } else if let cartridge {
+            // Lunga 34 pt come la miniatura rotonda, così i testi restano allineati a quelli delle armi.
+            CartridgeIcon(style: cartridge, height: 34, horizontal: true)
+                .foregroundStyle(Palette.muted)
+                .frame(width: 34, height: 26)
+        } else {
+            ZStack {
+                Circle().fill(Color.white.opacity(0.10))
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+            }
+            .frame(width: 34, height: 34)
+        }
+    }
+
+    /// Solo calibro: nome e «Senza arma» sulla stessa riga. Altre righe: nome sopra, dettaglio sotto.
+    @ViewBuilder
+    private var textView: some View {
+        if isCaliberRow {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+            }
+        }
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                if weapon != nil {
-                    WeaponThumb(weapon: weapon, size: 34)
-                } else {
-                    ZStack {
-                        Circle().fill(Color.white.opacity(0.10))
-                        if let cartridge {
-                            CartridgeIcon(style: cartridge, height: 22)
-                                .foregroundStyle(Palette.muted)
-                        } else {
-                            Image(systemName: symbol)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Palette.muted)
-                        }
-                    }
-                    .frame(width: 34, height: 34)
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
-                }
+                iconView
+                textView
                 Spacer(minLength: 8)
                 if selected {
                     Image(systemName: "checkmark")

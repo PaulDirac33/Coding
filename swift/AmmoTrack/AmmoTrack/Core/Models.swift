@@ -145,7 +145,11 @@ nonisolated struct Caliber: Identifiable, Codable, Hashable, Sendable {
 
     /// ".22 LR" → "22lr", "9x21" → "9x21": minuscolo, solo lettere e cifre.
     static func slug(_ name: String) -> String {
-        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
+        // × (U+00D7) → x, altrimenti "9×19" diventerebbe "919"
+        let folded = name
+            .replacingOccurrences(of: "\u{00D7}", with: "x")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .lowercased()
         let cleaned = folded.filter { $0.isLetter || $0.isNumber }
         return cleaned.isEmpty ? "calibro" : cleaned
     }
@@ -215,7 +219,7 @@ nonisolated struct Config: Codable, Equatable, Sendable {
     static var standard: Config {
         Config(version: 1,
                totalLimit: 1000,
-               calibers: [Caliber(id: "9x21", name: "9x21", limit: 600, allowsReload: true, fullName: "9 x 21 mm IMI"),
+               calibers: [Caliber(id: "9x21", name: "9×21", limit: 600, allowsReload: true, fullName: "9 × 21 mm IMI"),
                           Caliber(id: "22lr", name: "22 LR", limit: 400, allowsReload: false, fullName: ".22 Long Rifle")],
                weapons: [])
     }

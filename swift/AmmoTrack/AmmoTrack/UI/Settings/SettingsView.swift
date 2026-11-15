@@ -186,7 +186,7 @@ struct SettingsView: View {
                 }
             }
             HStack {
-                TextField("Nuovo calibro (es. 9x19)", text: $newName)
+                TextField("Nuovo calibro (es. 9×19)", text: $newName)
                 Toggle("Ricaricabile", isOn: $newReload)
                     .toggleStyle(.switch)
                     .controlSize(.small)
