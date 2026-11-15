@@ -57,6 +57,7 @@ struct EntryView: View {
     @State var keyMonitor: Any? = nil
     @State var gate = KeyGate()
     @FocusState var inputFocused: Bool
+    @Namespace var buttonsNS      // per il morph del vetro fra i due tasti
 
     let maxLength = 6        // cifre massime nella casella
 
@@ -102,8 +103,8 @@ struct EntryView: View {
     }
 
     var canCommit: Bool { quantity != nil && !target.caliberID.isEmpty }
-    /// Le aggiunte (acquisti, ricariche) non hanno un'arma: si fanno solo con "Senza arma".
-    var canAdd: Bool { canCommit && target.weaponID == nil }
+    /// «Aggiunte» esiste solo senza arma: con un'arma scelta viene assorbito dal tasto «Sparate».
+    var showsAddButton: Bool { target.weaponID == nil }
 
     // MARK: Corpo
 
@@ -117,15 +118,30 @@ struct EntryView: View {
                     inputFocused = true
                 }
 
-            VStack(spacing: 24) {
-                Spacer(minLength: 0)
-                weaponSlot
-                entryRow
-                provenanceRow
-                statusRow
-                Spacer(minLength: 0)
-                BalanceCard()
-                    .padding(.bottom, 14)
+            VStack(spacing: 0) {
+                // In alto: banner armi + casella. Sopra a tutto (zIndex) perché il banner aperto sporge verso il basso.
+                VStack(spacing: 24) {
+                    weaponSlot
+                    amountPill
+                }
+                .padding(.top, 8)
+                .zIndex(10)
+
+                Spacer(minLength: 24)
+
+                // Provenienza + i due tasti
+                VStack(spacing: 20) {
+                    provenanceRow
+                    actionButtons
+                }
+                .padding(.bottom, 16)
+
+                // Ultimo movimento attaccato ai saldi
+                VStack(spacing: 10) {
+                    statusRow
+                    BalanceCard()
+                }
+                .padding(.bottom, 14)
             }
             .padding(.horizontal, 24)
         }
@@ -167,18 +183,23 @@ struct EntryView: View {
             .zIndex(10)
     }
 
-    // MARK: Casella e frecce
+    // MARK: Tasti (sotto il selettore ricaricate/comprate)
 
-    var entryRow: some View {
-        HStack(alignment: .center, spacing: 26) {
-            directionButton(.shot)
-            amountPill
-            directionButton(.added)
+    /// I due tasti stanno nello stesso contenitore di vetro. Con un'arma scelta «Aggiunte» sparisce
+    /// e il suo vetro viene assorbito da «Sparate». Spacing del container = spacing dell'HStack:
+    /// a riposo non si fondono, si fondono solo quando uno dei due compare o scompare.
+    var actionButtons: some View {
+        GlassContainer(spacing: 24) {
+            HStack(spacing: 24) {
+                directionButton(.shot)
+                if showsAddButton {
+                    directionButton(.added)
+                }
+            }
         }
+        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: showsAddButton)
     }
 
-    /// Freccia giù = sparate, freccia su = aggiunte. Hanno il colore della provenienza scelta (oro = ricaricate,
-    /// rosso = comprate): direzione e provenienza restano due cose separate.
     func directionButton(_ kind: MovementKind) -> some View {
         let symbol = kind == .shot ? "arrow.down" : "arrow.up"
         let title = kind == .shot ? "Sparate" : "Aggiunte"
@@ -188,19 +209,22 @@ struct EntryView: View {
             } label: {
                 Image(systemName: symbol)
                     .font(.system(size: 26, weight: .bold))
-                    .frame(width: 40, height: 40)
+                    .foregroundStyle(Color.white)
+                    .frame(width: 56, height: 56)
+                    .contentShape(Circle())
             }
-            .buttonBorderShape(.circle)
-            .glassProminentButton()
-            .tint(provenance.color)
-            .controlSize(.large)
-            .disabled(kind == .shot ? !canCommit : !canAdd)
+            .buttonStyle(.plain)
+            .glassTintedCircle(provenance.color)
+            .glassMorphID(kind == .shot ? "shotButton" : "addButton", in: buttonsNS)
+            .disabled(!canCommit)
+            .opacity(canCommit ? 1 : 0.45)
 
             Text(title)
                 .font(.caption)
                 .foregroundStyle(Palette.muted)
+                .fixedSize()
         }
-        .frame(width: 84)
+        .frame(width: 56)
     }
 
     var amountFont: Font {
