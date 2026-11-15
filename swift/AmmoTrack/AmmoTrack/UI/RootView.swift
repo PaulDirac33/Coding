@@ -109,10 +109,6 @@ struct RootView: View {
 
     // MARK: Pagine
 
-    func go(_ target: AppPage) {
-        page = target
-    }
-
     /// Le tre pagine stanno in fila e scorrono insieme: nessuna si perde cambiando pagina
     /// (quel che stai scrivendo resta lì). Solo quella visibile riceve i tasti.
     var pager: some View {
@@ -120,7 +116,7 @@ struct RootView: View {
             let w = geo.size.width
             let h = geo.size.height
             HStack(spacing: 0) {
-                EntryView(isActive: page == .entry, onManageWeapons: { go(.weapons) })
+                EntryView(isActive: page == .entry)
                     .frame(width: w, height: h)
                     .allowsHitTesting(page == .entry)
                 DataView()

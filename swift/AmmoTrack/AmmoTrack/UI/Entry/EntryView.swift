@@ -41,8 +41,6 @@ struct EntryView: View {
 
     /// true quando questa è la pagina visibile: solo allora la casella riceve i tasti.
     let isActive: Bool
-    let onManageWeapons: () -> Void
-
     // L'ultima scelta resta in memoria: dopo un'uscita basta scrivere "50" e premere ↓.
     @AppStorage("entry.caliber") var storedCaliber = ""
     @AppStorage("entry.weapon") var selectedWeapon = ""
@@ -164,7 +162,7 @@ struct EntryView: View {
         Color.clear
             .frame(width: 320, height: 52)
             .overlay(alignment: .top) {
-                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, onManage: onManageWeapons)
+                WeaponPicker(target: targetBinding, isOpen: $pickerOpen)
             }
             .zIndex(10)
     }
