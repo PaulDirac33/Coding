@@ -41,11 +41,9 @@ struct EntryView: View {
 
     /// true quando questa è la pagina visibile: solo allora la casella riceve i tasti.
     let isActive: Bool
-    let onManageWeapons: () -> Void
-
     // L'ultima scelta resta in memoria: dopo un'uscita basta scrivere "50" e premere ↓.
     @AppStorage("entry.caliber") var storedCaliber = ""
-    @AppStorage("entry.weapon") var storedWeapon = ""
+    @AppStorage("entry.weapon") var selectedWeapon = ""
     @AppStorage("entry.provenance") var storedProvenance = "ricaricate"
 
     // inserimento
@@ -66,14 +64,13 @@ struct EntryView: View {
 
     var target: EntryTarget {
         let cfg = store.config
-        if let w = cfg.weapons.first(where: { $0.id == storedWeapon && !$0.isArchived }) {
+        if let w = cfg.weapons.first(where: { $0.id == selectedWeapon && !$0.isArchived }) {
             return EntryTarget(caliberID: w.caliberID, weaponID: w.id)
         }
         guard let cal = cfg.calibers.first(where: { $0.id == storedCaliber }) ?? cfg.calibers.first else {
             return EntryTarget(caliberID: "", weaponID: nil)
         }
-        // Se il calibro ha delle armi propongo la prima; senza armi si registra "senza arma".
-        return EntryTarget(caliberID: cal.id, weaponID: cfg.activeWeapons(for: cal.id).first?.id)
+        return EntryTarget(caliberID: cal.id, weaponID: nil)   // niente più "propongo la prima arma"
     }
 
     var targetBinding: Binding<EntryTarget> {
@@ -82,7 +79,7 @@ struct EntryView: View {
 
     func select(_ t: EntryTarget) {
         storedCaliber = t.caliberID
-        storedWeapon = t.weaponID ?? ""
+        selectedWeapon = t.weaponID ?? ""
     }
 
     var caliber: Caliber? { store.config.caliber(target.caliberID) }
@@ -105,6 +102,8 @@ struct EntryView: View {
     }
 
     var canCommit: Bool { quantity != nil && !target.caliberID.isEmpty }
+    /// Le aggiunte (acquisti, ricariche) non hanno un'arma: si fanno solo con "Senza arma".
+    var canAdd: Bool { canCommit && target.weaponID == nil }
 
     // MARK: Corpo
 
@@ -163,7 +162,7 @@ struct EntryView: View {
         Color.clear
             .frame(width: 320, height: 52)
             .overlay(alignment: .top) {
-                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, onManage: onManageWeapons)
+                WeaponPicker(target: targetBinding, isOpen: $pickerOpen)
             }
             .zIndex(10)
     }
@@ -195,7 +194,7 @@ struct EntryView: View {
             .glassProminentButton()
             .tint(provenance.color)
             .controlSize(.large)
-            .disabled(!canCommit)
+            .disabled(kind == .shot ? !canCommit : !canAdd)
 
             Text(title)
                 .font(.caption)

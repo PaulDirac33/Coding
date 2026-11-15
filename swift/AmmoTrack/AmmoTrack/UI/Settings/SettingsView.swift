@@ -186,14 +186,14 @@ struct SettingsView: View {
                 }
             }
             HStack {
-                TextField("Nuovo calibro (es. 9x19)", text: $newName)
+                TextField("Nuovo calibro (es. 9×19)", text: $newName)
                 Toggle("Ricaricabile", isOn: $newReload)
                     .toggleStyle(.switch)
                     .controlSize(.small)
                 Button("Aggiungi") { addCaliber() }
                     .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text("Il .22 LR non si ricarica: lasciandolo non ricaricabile sparisce la scelta ricaricate/comprate.")
+            Text("Il 22 LR non si ricarica: lasciandolo non ricaricabile sparisce la scelta ricaricate/comprate.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

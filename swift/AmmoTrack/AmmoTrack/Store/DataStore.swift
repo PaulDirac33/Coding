@@ -314,11 +314,14 @@ final class DataStore: ObservableObject {
 
     // MARK: Armi e immagini
 
-    /// Salva (o crea) un'arma. `newImage` è un JPEG già pronto; `removeImage` toglie quella attuale.
-    func saveWeapon(_ weapon: Weapon, newImage: Data?, removeImage: Bool) -> String? {
+    /// Salva (o crea) un'arma. `newImage` è un JPEG già pronto, `newLogo` un PNG; i `remove…` tolgono quelli attuali.
+    func saveWeapon(_ weapon: Weapon, newImage: Data?, removeImage: Bool,
+                    newLogo: Data? = nil, removeLogo: Bool = false) -> String? {
         guard let f = files else { return "Cartella dei dati non disponibile." }
         var w = weapon
-        let previousFile = config.weapon(weapon.id)?.imageFile
+        let previous = config.weapon(weapon.id)
+        let previousFile = previous?.imageFile
+        let previousLogo = previous?.logoFile
 
         if let data = newImage {
             let name = "\(w.id)-\(Int(Date().timeIntervalSince1970)).jpg"
@@ -330,6 +333,21 @@ final class DataStore: ObservableObject {
             w.imageFile = name
         } else if removeImage {
             w.imageFile = nil
+        }
+
+        var writtenLogo: String? = nil
+        if let data = newLogo {
+            let name = "\(w.id)-logo-\(Int(Date().timeIntervalSince1970)).png"
+            do {
+                try f.writeImage(data, name: name)
+            } catch {
+                if newImage != nil, let written = w.imageFile { f.deleteImage(name: written) }
+                return describe(error, path: f.imagesURL.path)
+            }
+            w.logoFile = name
+            writtenLogo = name
+        } else if removeLogo {
+            w.logoFile = nil
         }
 
         let saved = w
@@ -347,8 +365,14 @@ final class DataStore: ObservableObject {
                 f.deleteImage(name: old)
                 imageCache = imageCache.filter { !$0.key.hasPrefix(old + "@") }
             }
-        } else if newImage != nil, let name = saved.imageFile {
-            f.deleteImage(name: name)         // salvataggio fallito: tolgo l'immagine appena scritta
+            if let old = previousLogo, old != saved.logoFile {
+                f.deleteImage(name: old)
+                imageCache = imageCache.filter { !$0.key.hasPrefix(old + "@") }
+            }
+        } else {
+            // salvataggio fallito: tolgo i file appena scritti
+            if newImage != nil, let name = saved.imageFile { f.deleteImage(name: name) }
+            if let name = writtenLogo { f.deleteImage(name: name) }
         }
         return error
     }
@@ -360,12 +384,14 @@ final class DataStore: ObservableObject {
             return "L'arma ha \(n) movimenti nel registro: non si può eliminare. Archiviala per toglierla dal selettore."
         }
         let image = config.weapon(id)?.imageFile
+        let logo = config.weapon(id)?.logoFile
         let error = mutateConfig { cfg in
             cfg.weapons.removeAll { $0.id == id }
             return nil
         }
-        if error == nil, let image {
-            files?.deleteImage(name: image)
+        if error == nil {
+            if let image { files?.deleteImage(name: image) }
+            if let logo { files?.deleteImage(name: logo) }
         }
         return error
     }
@@ -381,6 +407,16 @@ final class DataStore: ObservableObject {
     /// Foto dell'arma ridimensionata (con cache in memoria).
     func image(for weapon: Weapon?, maxPixel: Int) -> CGImage? {
         guard let weapon, let name = weapon.imageFile, let f = files else { return nil }
+        let key = "\(name)@\(maxPixel)"
+        if let cached = imageCache[key] { return cached }
+        let url = f.imagesURL.appendingPathComponent(name)
+        guard let image = ImageTools.cgImage(fromFile: url, maxPixel: maxPixel) else { return nil }
+        imageCache[key] = image
+        return image
+    }
+    /// Logo dell'arma (PNG con trasparenza), con cache in memoria.
+    func logo(for weapon: Weapon?, maxPixel: Int) -> CGImage? {
+        guard let weapon, let name = weapon.logoFile, let f = files else { return nil }
         let key = "\(name)@\(maxPixel)"
         if let cached = imageCache[key] { return cached }
         let url = f.imagesURL.appendingPathComponent(name)

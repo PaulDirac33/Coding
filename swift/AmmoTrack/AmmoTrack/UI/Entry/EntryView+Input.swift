@@ -81,7 +81,9 @@ extension EntryView {
         if press.key == .return || press.characters == "\u{3}" {
             if canCommit && press.phase == .down {
                 statusKind = .hint
-                statusText = "Premi ↓ per «sparate» o ↑ per «aggiunte»."
+                statusText = target.weaponID == nil
+                    ? "Premi ↓ per «sparate» o ↑ per «aggiunte»."
+                    : "Premi ↓ per «sparate»."
             }
             return .handled
         }
@@ -163,6 +165,11 @@ extension EntryView {
         let t = target
         guard !t.caliberID.isEmpty else {
             fail("Nessun calibro configurato: aggiungilo dalle Impostazioni (⌘,).")
+            return
+        }
+        if kind == .added && t.weaponID != nil {
+            statusKind = .hint
+            statusText = "Con un'arma scelta non si aggiungono cartucce: scegli «Senza arma» nel banner."
             return
         }
 

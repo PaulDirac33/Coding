@@ -116,16 +116,18 @@ nonisolated struct Caliber: Identifiable, Codable, Hashable, Sendable {
     var limit: Int?
     /// false per il .22 LR: non si ricarica, quindi sparisce la scelta ricaricate/comprate.
     var allowsReload: Bool
+    /// Nome per esteso, mostrato nel banner dell'Inserimento (es. "9 x 21 mm IMI"). nil = si usa `name`.
+    var fullName: String?
 
-    init(id: String, name: String, limit: Int? = nil, allowsReload: Bool = true) {
+    init(id: String, name: String, limit: Int? = nil, allowsReload: Bool = true, fullName: String? = nil) {
         self.id = id
         self.name = name
         self.limit = limit
         self.allowsReload = allowsReload
+        self.fullName = fullName
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, limit, allowsReload }
-
+    enum CodingKeys: String, CodingKey { case id, name, limit, allowsReload, fullName }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let identifier = try c.decodeIfPresent(String.self, forKey: .id) ?? "calibro"
@@ -133,11 +135,21 @@ nonisolated struct Caliber: Identifiable, Codable, Hashable, Sendable {
         self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? identifier
         self.limit = try c.decodeIfPresent(Int.self, forKey: .limit)
         self.allowsReload = try c.decodeIfPresent(Bool.self, forKey: .allowsReload) ?? true
+        self.fullName = try c.decodeIfPresent(String.self, forKey: .fullName)
+    }
+    /// Nome per esteso se c'è, altrimenti quello breve.
+    var displayName: String {
+        let t = (fullName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? name : t
     }
 
     /// ".22 LR" → "22lr", "9x21" → "9x21": minuscolo, solo lettere e cifre.
     static func slug(_ name: String) -> String {
-        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
+        // × (U+00D7) → x, altrimenti "9×19" diventerebbe "919"
+        let folded = name
+            .replacingOccurrences(of: "\u{00D7}", with: "x")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .lowercased()
         let cleaned = folded.filter { $0.isLetter || $0.isNumber }
         return cleaned.isEmpty ? "calibro" : cleaned
     }
@@ -154,6 +166,8 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
     var notes: String
     /// Nome del file immagine dentro la cartella "Immagini" (nil = nessuna immagine).
     var imageFile: String?
+    /// File PNG (con trasparenza) del logo della casa, dentro "Immagini" (nil = nessun logo).
+    var logoFile: String?
     /// Un'arma archiviata sparisce dal selettore ma conserva lo storico.
     var isArchived: Bool
 
@@ -163,6 +177,7 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
          serial: String = "",
          notes: String = "",
          imageFile: String? = nil,
+         logoFile: String? = nil,
          isArchived: Bool = false) {
         self.id = id
         self.name = name
@@ -170,10 +185,11 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
         self.serial = serial
         self.notes = notes
         self.imageFile = imageFile
+        self.logoFile = logoFile
         self.isArchived = isArchived
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, caliberID, serial, notes, imageFile, isArchived }
+    enum CodingKeys: String, CodingKey { case id, name, caliberID, serial, notes, imageFile, logoFile, isArchived }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -183,6 +199,7 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
         self.serial = try c.decodeIfPresent(String.self, forKey: .serial) ?? ""
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         self.imageFile = try c.decodeIfPresent(String.self, forKey: .imageFile)
+        self.logoFile = try c.decodeIfPresent(String.self, forKey: .logoFile)
         self.isArchived = try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     }
 }
@@ -207,8 +224,8 @@ nonisolated struct Config: Codable, Equatable, Sendable {
     static var standard: Config {
         Config(version: 1,
                totalLimit: 1000,
-               calibers: [Caliber(id: "9x21", name: "9x21", limit: 600, allowsReload: true),
-                          Caliber(id: "22lr", name: ".22 LR", limit: 400, allowsReload: false)],
+               calibers: [Caliber(id: "9x21", name: "9×21", limit: 600, allowsReload: true, fullName: "9 × 21 mm IMI"),
+                          Caliber(id: "22lr", name: "22 LR", limit: 400, allowsReload: false, fullName: ".22 Long Rifle")],
                weapons: [])
     }
 
@@ -238,6 +255,9 @@ nonisolated struct Config: Codable, Equatable, Sendable {
 
     func caliberName(_ id: String) -> String {
         caliber(id)?.name ?? id
+    }
+    func caliberLongName(_ id: String) -> String {
+        caliber(id)?.displayName ?? id
     }
 
     mutating func setLimit(_ limit: Int?, for caliberID: String) {
