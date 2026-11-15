@@ -20,6 +20,12 @@ struct EntryTarget: Equatable {
     var caliberID: String
     var weaponID: String?
 }
+/// Come appaiono il selettore ricaricate/comprate e i tasti. Segue la scelta, ma sincronizzato con la chiusura del banner armi.
+struct ProvenanceLook: Equatable {
+    var selector: Bool      // true = selettore visibile, false = scritta «non si ricarica»
+    var bought: Bool        // colore dei tasti: false = oro (ricaricate), true = rosso (comprate)
+    var name: String        // calibro nominato nella scritta
+}
 
 enum EntryStatus {
     case none
@@ -32,6 +38,11 @@ enum EntryStatus {
 @MainActor
 final class KeyGate {
     var active = false
+}
+/// Numero dell'ultima sincronizzazione richiesta: chi arriva dopo annulla quelle ancora in attesa.
+@MainActor
+final class SyncToken {
+    var value = 0
 }
 
 // MARK: - Vista
@@ -56,9 +67,11 @@ struct EntryView: View {
     @State var flash = false
     @State var keyMonitor: Any? = nil
     @State var gate = KeyGate()
+    @State var syncToken = SyncToken()
     @FocusState var inputFocused: Bool
     @Namespace var buttonsNS      // per il morph del vetro fra i due tasti
     @State var addShown = true               // «Aggiunte» visibile: segue showsAddButton, ma solo a banner chiuso
+    @State var look = ProvenanceLook(selector: true, bought: false, name: "")   // aspetto mostrato di selettore e tasti
     @State var pageHeight: CGFloat = 700     // altezza della pagina (misurata)
     @State var slotTop: CGFloat = 300        // distanza del tasto armi dall'alto della pagina (misurata)
 
@@ -66,6 +79,13 @@ struct EntryView: View {
     /// Secondi fra l'inizio della chiusura del banner e il fondersi/dividersi dei tasti.
     /// 0 = partono insieme; alzalo se vuoi che il banner sia già quasi chiuso.
     let addButtonDelay: Double = 0.15
+    /// Animazione del colore dei tasti e della sfumatura del selettore ricaricate/comprate.
+    /// Durata della sfumatura del colore dei tasti e del selettore ricaricate/comprate.
+    /// Serve anche a far partire la fusione dei tasti solo a sfumatura finita.
+    let lookDuration: Double = 0.25
+    var lookAnimation: Animation { .easeInOut(duration: lookDuration) }
+    /// Pausa fra la fine della sfumatura del colore e l'inizio della fusione/divisione del vetro.
+    let glassPause: Double = 0.06
 
     // MARK: Scelta corrente
 
@@ -95,12 +115,25 @@ struct EntryView: View {
     var allowsReload: Bool { caliber?.allowsReload ?? true }
 
     /// Il .22 non si ricarica: è sempre "comprate".
-    var provenance: Provenance {
-        allowsReload ? (Provenance(rawValue: storedProvenance) ?? .reloaded) : .bought
+    /// La scelta fatta nel selettore, anche se il calibro attuale non si ricarica.
+    var storedChoice: Provenance {
+        Provenance(rawValue: storedProvenance) ?? .reloaded
     }
 
+    /// Il .22 non si ricarica: è sempre "comprate".
+    var provenance: Provenance {
+        allowsReload ? storedChoice : .bought
+    }
+
+    /// Il selettore mostra la scelta memorizzata e non quella effettiva: scegliendo il .22 la bolla non
+    /// scivola su «Comprate» mentre il banner si chiude, il selettore sfuma e basta.
     var provenanceBinding: Binding<Provenance> {
-        Binding(get: { provenance }, set: { setProvenance($0) })
+        Binding(get: { storedChoice }, set: { setProvenance($0) })
+    }
+
+    /// Come dovrebbero apparire selettore e tasti secondo la scelta attuale.
+    var lookWanted: ProvenanceLook {
+        ProvenanceLook(selector: allowsReload, bought: provenance == .bought, name: caliberName)
     }
 
     var quantity: Int? {
@@ -155,6 +188,7 @@ struct EntryView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .onAppear {
             addShown = showsAddButton
+            look = lookWanted
             gate.active = isActive
             installKeyMonitor()
             DispatchQueue.main.async { inputFocused = isActive }
@@ -179,10 +213,16 @@ struct EntryView: View {
             }
         }
         .onChange(of: showsAddButton) { _, _ in
-            if !pickerOpen { syncAddButton() }      // cambio senza banner aperto (es. arma archiviata)
+            if !pickerOpen { syncControls() }                       // cambio a banner chiuso (es. arma archiviata)
         }
         .onChange(of: pickerOpen) { _, open in
-            if !open { syncAddButton() }            // il banner si è chiuso: ora i tasti seguono la scelta
+            if !open { syncControls(after: addButtonDelay) }        // il banner si è chiuso
+        }
+        .onChange(of: storedProvenance) { _, _ in
+            syncLook()                                              // selettore mosso: il colore segue subito, anche a banner aperto
+        }
+        .onChange(of: lookWanted) { _, _ in
+            if !pickerOpen { syncControls() }                       // cambio a banner chiuso
         }
     }
 
@@ -215,15 +255,37 @@ struct EntryView: View {
         }
     }
 
-    /// Allinea «Aggiunte» alla scelta corrente, ma solo a banner chiuso e dopo `addButtonDelay`:
-    /// il vetro dei tasti si fonde o si divide mentre il banner si richiude, non prima.
-    func syncAddButton() {
-        guard showsAddButton != addShown else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + addButtonDelay) {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-                addShown = showsAddButton
+    /// Porta «Aggiunte», colore dei tasti e selettore alla scelta corrente, UNO ALLA VOLTA:
+    /// prima colore e selettore, poi (a sfumatura finita) il vetro che si fonde o si divide.
+    /// Colore e vetro in movimento insieme fanno sfarfallare i tasti e possono far saltare la goccia.
+    /// Ogni chiamata annulla quelle ancora in attesa; cosa fare si decide al momento di partire.
+    func syncControls(after delay: Double = 0) {
+        syncToken.value += 1
+        let ticket = syncToken.value
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard syncToken.value == ticket, !pickerOpen else { return }
+
+            // 1. colore dei tasti e selettore
+            let tintChanges = look.bought != lookWanted.bought
+            let lookChanges = look != lookWanted
+            syncLook()
+
+            // 2. vetro: solo quando il passo 1 ha finito
+            guard addShown != showsAddButton else { return }
+            let gap: Double = tintChanges ? lookDuration + glassPause : (lookChanges ? glassPause : 0)
+            DispatchQueue.main.asyncAfter(deadline: .now() + gap) {
+                guard syncToken.value == ticket, !pickerOpen else { return }
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                    addShown = showsAddButton
+                }
             }
         }
+    }
+
+    /// Porta subito selettore e colore dei tasti alla scelta corrente (non tocca «Aggiunte»).
+    func syncLook() {
+        guard look != lookWanted else { return }
+        withAnimation(lookAnimation) { look = lookWanted }
     }
 
     func directionButton(_ kind: MovementKind) -> some View {
@@ -240,7 +302,7 @@ struct EntryView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .glassTintedCircle(provenance.color)
+            .provenanceGlassCircle(look.bought ? 1 : 0)
             .glassMorphID(kind == .shot ? "shotButton" : "addButton", in: buttonsNS)
             .disabled(!canCommit)
             .opacity(canCommit ? 1 : 0.45)
@@ -372,7 +434,7 @@ struct EntryView: View {
     /// Ricaricate / comprate. Per il .22 non c'è scelta: compare solo la nota.
     var provenanceRow: some View {
         ZStack {
-            if allowsReload {
+            if look.selector {
                 GlassSegmented(options: Provenance.allCases,
                                selection: provenanceBinding,
                                segmentWidth: 124,
@@ -386,14 +448,17 @@ struct EntryView: View {
                             .foregroundStyle(selected ? Color.white : Color.white.opacity(0.68))
                     }
                 }
+                .transition(.opacity)
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: Provenance.bought.symbol)
                         .foregroundStyle(Provenance.bought.color)
-                    Text("\(caliberName) non si ricarica: solo comprate")
+                    Text("\(look.name) non si ricarica: solo comprate")
                         .foregroundStyle(Palette.muted)
                 }
                 .font(.caption)
+                .id(look.name)              // fra due calibri non ricaricabili il nome sfuma
+                .transition(.opacity)
             }
         }
         .frame(height: 36)
