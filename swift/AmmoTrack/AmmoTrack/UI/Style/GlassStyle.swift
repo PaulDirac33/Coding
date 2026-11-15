@@ -36,6 +36,17 @@ extension View {
                 .overlay(Capsule().stroke(Palette.line))
         }
     }
+    /// Cerchio di vetro colorato per i pulsanti tondi (si combina con `glassMorphID`).
+    @ViewBuilder
+    func glassTintedCircle(_ tint: Color) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular.tint(tint).interactive(), in: Circle())
+        } else {
+            self
+                .background(Circle().fill(tint.opacity(0.85)))
+                .overlay(Circle().stroke(Palette.line))
+        }
+    }
 
     /// Pulsante in vetro su macOS 26+, pulsante normale prima.
     @ViewBuilder

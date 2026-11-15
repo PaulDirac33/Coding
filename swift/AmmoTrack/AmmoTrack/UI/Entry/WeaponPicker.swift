@@ -19,6 +19,7 @@ struct WeaponPicker: View {
 
     @Binding var target: EntryTarget
     @Binding var isOpen: Bool
+    var maxPanelHeight: CGFloat = 360     // la decide EntryView: dal tasto fino al fondo della pagina
 
     @Namespace private var ns
 
@@ -37,14 +38,32 @@ struct WeaponPicker: View {
     /// Separatore fra calibro e matricola. Il trattino «–» (en dash) è un unico segno, come il "--" di LaTeX.
     /// Alternative: " • " oppure " - ".
     private static let separator = "  •  "
+    /// Animazione di assorbimento e comparsa delle armi: la stessa per righe e altezza del banner.
+    private static var absorbAnimation: Animation {
+        .spring(response: 0.42, dampingFraction: 0.86)
+    }
+
+    /// Come entrano ed escono le righe delle armi: sfumano in fretta e si restringono verso la riga del calibro.
+    private static var absorbTransition: AnyTransition {
+        AnyTransition.opacity.animation(.easeOut(duration: 0.18))
+            .combined(with: .scale(scale: 0.92, anchor: .top))
+    }
 
     /// Posizione di ogni riga, raccolta dalle righe stesse.
     @State private var rowFrames: [String: CGRect] = [:]
+    /// Altezza che le righe avrebbero senza scorrimento (misurata quando il banner è aperto).
+    @State private var rowsHeight: CGFloat = 0
+    /// Calibri con le armi assorbite (id separati da virgola). Si ricorda anche fra un avvio e l'altro.
+    @AppStorage("picker.collapsedCalibers") private var collapsedRaw = ""
+    /// Posizione delle bolle piccole (una per calibro che ha armi), raccolta dalle righe.
+    @State private var toggleFrames: [String: CGRect] = [:]
 
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.50, dampingFraction: 0.48)))
     private var drag: CGFloat? = nil
+    /// Calibro la cui bolla piccola è premuta in questo momento (nil = nessuna).
+    @GestureState private var pressedToggle: String? = nil
 
     private static var morphs: Bool {
         if #available(macOS 26.0, *) { return true }
@@ -67,6 +86,7 @@ struct WeaponPicker: View {
             if isOpen {
                 panel
                     .liquidGlass(cornerRadius: 26)
+                    .animation(Self.absorbAnimation, value: collapsedRaw)
                     .glassMorphID("weaponPicker", in: ns)
             } else {
                 pickerButton
@@ -110,7 +130,7 @@ struct WeaponPicker: View {
         guard !target.caliberID.isEmpty else { return "Aggiungi un calibro dalle Impostazioni" }
         guard let w = currentWeapon else { return "Senza arma" }
         var parts = [store.config.caliberName(target.caliberID)]
-        if !w.serial.isEmpty { parts.append("matr. \(w.serial)") }
+        if !w.serial.isEmpty { parts.append(w.serial) }
         return parts.joined(separator: Self.separator)
     }
 
@@ -141,6 +161,7 @@ struct WeaponPicker: View {
                     .font(.caption)
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
+                    .offset(y: 2)
             }
             Image(systemName: "chevron.up.chevron.down")
                 .font(.system(size: 11, weight: .semibold))
@@ -180,10 +201,16 @@ struct WeaponPicker: View {
     }
 
     private var panel: some View {
-        Group {
-            if rowCount > 7 {
+        // Spazio per le righe: altezza massima del banner meno i 10 pt di margine sopra e sotto.
+        let room = max(120, maxPanelHeight - 20)
+        // Stima con TUTTE le armi visibili: decide se serve lo scorrimento. Così assorbire un calibro
+        // non cambia mai la struttura (ScrollView ↔ vista normale) e le righe non sfarfallano.
+        let full = CGFloat(rowCount) * 50 + CGFloat(store.config.calibers.count) * 24
+        return Group {
+            if full > room {
                 ScrollView { rows }
-                    .frame(height: 360)
+                    .scrollIndicators(.hidden)
+                    .frame(height: min(room, rowsHeight > 0 ? rowsHeight : full))
             } else {
                 rows
             }
@@ -198,8 +225,11 @@ struct WeaponPicker: View {
                 caliberSection(cal)
             }
         }
+        .animation(Self.absorbAnimation, value: collapsedRaw)
         .coordinateSpace(.named(rowsSpace))
         .onPreferenceChange(RowFramesKey.self) { rowFrames = $0 }
+        .onPreferenceChange(ToggleFramesKey.self) { toggleFrames = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
         .background(alignment: .topLeading) { lens }
         .contentShape(Rectangle())
         .gesture(pickGesture)
@@ -207,13 +237,23 @@ struct WeaponPicker: View {
 
     @ViewBuilder
     private func caliberSection(_ cal: Caliber) -> some View {
-        let weapons = store.config.activeWeapons(for: cal.id)
+        let all = store.config.activeWeapons(for: cal.id)
+        let isAbsorbed = absorbed.contains(cal.id)
+        // Con il calibro assorbito resta visibile solo l'arma selezionata (se è di questo calibro):
+        // la bolla grande ha sempre una riga su cui stare.
+        let shown = isAbsorbed ? all.filter { $0.id == target.weaponID } : all
+        let hidden = all.count - shown.count
         let balance = store.ledger.balance(for: cal.id)
 
-        HStack {
+        HStack(spacing: 6) {
             Text(cal.name.uppercased())
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Palette.muted)
+            if hidden > 0 {
+                Text("· \(hidden) \(hidden == 1 ? "arma nascosta" : "armi nascoste")")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.muted)
+            }
             Spacer()
             Text("\(numText(balance.total)) cartucce")
                 .font(.caption2)
@@ -227,16 +267,40 @@ struct WeaponPicker: View {
                   weapon: nil,
                   title: cal.displayName,
                   subtitle: "Senza arma",
-                  cartridge: cal.cartridgeStyle)
-        ForEach(weapons) { w in
+                  cartridge: cal.cartridgeStyle,
+                  toggleID: all.isEmpty ? nil : cal.id,
+                  absorbed: isAbsorbed,
+                  togglePressed: pressedToggle == cal.id)
+        ForEach(shown) { w in
             PickerRow(rowKey: key(EntryTarget(caliberID: cal.id, weaponID: w.id)),
                       space: rowsSpace,
                       weapon: w,
                       title: w.name,
-                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)matr. \(w.serial)")
+                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)\(w.serial)")
+                .transition(Self.absorbTransition)  // scorrono verso il calibro e sfumano
         }
     }
 
+    // MARK: Armi assorbite (bolla piccola dei calibri)
+
+    private var absorbed: Set<String> {
+        Set(collapsedRaw.split(separator: ",").map(String.init))
+    }
+
+    private func toggleAbsorbed(_ id: String) {
+        var set = absorbed
+        if set.contains(id) { set.remove(id) } else { set.insert(id) }
+        withAnimation(Self.absorbAnimation) {
+            collapsedRaw = set.sorted().joined(separator: ",")
+        }
+    }
+
+    /// Calibro la cui bolla piccola contiene il punto (area un po' più larga della bolla).
+    private func toggleHit(_ p: CGPoint) -> String? {
+        toggleFrames.first {
+            $0.value.insetBy(dx: -AbsorbBubble.hitSlop, dy: -AbsorbBubble.hitSlop).contains(p)
+        }?.key
+    }
     // MARK: Bolla e selezione
 
     private func key(_ t: EntryTarget) -> String {
@@ -263,13 +327,25 @@ struct WeaponPicker: View {
     private var pickGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(rowsSpace))
             .updating($drag) { g, state, transaction in
+                // Pressione iniziata sulla bolla piccola: la bolla grande non si muove.
+                guard toggleHit(g.startLocation) == nil else { return }
                 // Al primo tocco la bolla raggiunge il punto con una molla, poi segue senza ritardo.
                 transaction.animation = (state == nil)
                     ? Animation.spring(response: 0.30, dampingFraction: 0.62)
                     : nil
                 state = g.location.y
             }
-            .onEnded { g in finish(at: g.location) }
+            .updating($pressedToggle) { g, state, _ in
+                state = toggleHit(g.startLocation)
+            }
+            .onEnded { g in
+                if let id = toggleHit(g.startLocation) {
+                    // Inizia e finisce sulla stessa bolla piccola: assorbe o espande. Selezione e banner restano com'erano.
+                    if toggleHit(g.location) == id { toggleAbsorbed(id) }
+                } else {
+                    finish(at: g.location)
+                }
+            }
     }
 
     private func finish(at point: CGPoint) {
@@ -287,30 +363,49 @@ struct WeaponPicker: View {
         }
     }
 
-    /// Dove sta la bolla: sulla riga scelta; mentre premi, sul puntatore (con l'altezza che si adatta alle righe).
+    /// Chiavi delle righe dei calibri che hanno la bolla piccola.
+    private var shortKeys: Set<String> {
+        Set(store.config.calibers
+            .filter { !store.config.activeWeapons(for: $0.id).isEmpty }
+            .map { key(EntryTarget(caliberID: $0.id, weaponID: nil)) })
+    }
+    /// Bolla grande a riposo su una riga: larga come la riga, meno lo spazio della bolla piccola sui calibri che ne hanno una.
+    private func restRect(_ key: String, _ frame: CGRect) -> CGRect {
+        var r = frame.insetBy(dx: lensInset, dy: 0)
+        if shortKeys.contains(key) { r.size.width -= AbsorbBubble.slot }
+        return r
+    }
+
+    /// Bolla grande a riposo su una riga: larga come la riga, meno lo spazio della bolla piccola sui calibri che ne hanno una.
     private func lensRect() -> CGRect? {
         guard let full = rowFrames[selectedKey] else { return nil }
-        let rest = full.insetBy(dx: lensInset, dy: 0)
+        let rest = restRect(selectedKey, full)
         guard let y = drag else { return rest }
 
-        let ordered = rowFrames.values.sorted { $0.midY < $1.midY }
+        let ordered = rowFrames.sorted { $0.value.midY < $1.value.midY }
         guard let first = ordered.first, let last = ordered.last else { return rest }
-        let cy = min(max(y, first.midY), last.midY)
+        let cy = min(max(y, first.value.midY), last.value.midY)
 
-        var h = last.height
-        if cy <= first.midY {
-            h = first.height
+        // Altezza e larghezza si interpolano fra le due righe sopra e sotto il puntatore.
+        var h = last.value.height
+        var w = restRect(last.key, last.value).width
+        if cy <= first.value.midY {
+            h = first.value.height
+            w = restRect(first.key, first.value).width
         } else {
-            for i in 1..<ordered.count where cy <= ordered[i].midY {
+            for i in 1..<ordered.count where cy <= ordered[i].value.midY {
                 let a = ordered[i - 1]
                 let b = ordered[i]
-                let t = (cy - a.midY) / (b.midY - a.midY)
-                h = a.height + (b.height - a.height) * t
+                let t = (cy - a.value.midY) / (b.value.midY - a.value.midY)
+                h = a.value.height + (b.value.height - a.value.height) * t
+                let wa = restRect(a.key, a.value).width
+                let wb = restRect(b.key, b.value).width
+                w = wa + (wb - wa) * t
                 break
             }
         }
         let height = h + 6                                  // premuta, si ingrandisce un po'
-        return CGRect(x: rest.minX - 4, y: cy - height / 2, width: rest.width + 8, height: height)
+        return CGRect(x: rest.minX - 4, y: cy - height / 2, width: w + 8, height: height)
     }
 
     /// I muri della bolla: bordo alto della prima riga e basso dell'ultima, con 2 pt di respiro (come in GlassSegmented).
@@ -339,6 +434,7 @@ struct WeaponPicker: View {
                                            minY: r.minY, height: r.height,
                                            wallTop: walls.top, wallBottom: walls.bottom,
                                            wallLeft: walls.left, wallRight: walls.right))
+                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: rowFrames)
         }
     }
 }
@@ -350,6 +446,48 @@ private nonisolated struct RowFramesKey: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue()) { _, new in new }
+    }
+}
+/// Ogni bolla piccola scrive qui la propria posizione (chiave = id del calibro).
+private nonisolated struct ToggleFramesKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// Misure della bolla piccola (a destra dei calibri che hanno armi).
+private enum AbsorbBubble {
+    static let size: CGFloat = 22           // diametro con le armi visibili
+    static let smallScale: CGFloat = 0.64   // con le armi assorbite: 14 pt
+    static let slot: CGFloat = 30           // spazio che toglie alla bolla grande su quelle righe
+    static let edge: CGFloat = 3            // distanza dal bordo destro della riga (come lensInset)
+    static let hitSlop: CGFloat = 5         // area cliccabile oltre il bordo della bolla
+}
+/// Il vetro delle bolle piccole: stessi ingredienti della bolla grande quando è premuta
+/// (glassEffect, riflesso, bordo), con un'ombra più leggera perché il cerchio è piccolo.
+private struct AbsorbGlass: View {
+    @ViewBuilder
+    private var base: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear
+                .glassEffect(.clear.tint(Color.white.opacity(0.12)), in: Circle())
+        } else {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .overlay(Circle().fill(Color.white.opacity(0.14)))
+        }
+    }
+
+    var body: some View {
+        base
+            .overlay(Circle().fill(LinearGradient(
+                colors: [Color.white.opacity(0.16), Color.clear, Color.white.opacity(0.05)],
+                startPoint: .top, endPoint: .bottom)))
+            .overlay(Circle().strokeBorder(LinearGradient(
+                colors: [Color.white.opacity(0.80), Color.white.opacity(0.10), Color.white.opacity(0.45)],
+                startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.40), radius: 6, y: 2)
     }
 }
 
@@ -473,6 +611,9 @@ private struct PickerRow: View {
     let title: String
     let subtitle: String
     var cartridge: CartridgeStyle? = nil     // se c'è, è la riga del solo calibro: si disegna la cartuccia
+    var toggleID: String? = nil      // se c'è, è un calibro con armi: a destra compare la bolla piccola
+    var absorbed = false             // true = armi assorbite (bolla piccola)
+    var togglePressed = false        // la bolla è premuta in questo momento
 
     /// true per la riga del solo calibro (nessuna arma, con la cartuccia).
     private var isCaliberRow: Bool {
@@ -519,7 +660,31 @@ private struct PickerRow: View {
             }
         }
     }
-
+    /// Bolla piccola di vetro: 22 pt con le armi visibili, 14 pt con le armi assorbite.
+    /// Cambia il diametro vero e non una scala, così il vetro resta nitido. L'area misurata per il clic
+    /// è sempre quella da 22 pt: la bolla rimpicciolita si preme comunque facilmente.
+    /// Il clic lo gestisce il pannello.
+    @ViewBuilder
+    private var absorbBubble: some View {
+        if let toggleID {
+            let d = AbsorbBubble.size
+                * (absorbed ? AbsorbBubble.smallScale : 1)
+                * (togglePressed ? 0.9 : 1)
+            AbsorbGlass()
+                .frame(width: d, height: d)
+                .frame(width: AbsorbBubble.size, height: AbsorbBubble.size)
+                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: absorbed)
+                .animation(.easeOut(duration: 0.12), value: togglePressed)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: ToggleFramesKey.self,
+                                               value: [toggleID: geo.frame(in: .named(space))])
+                    }
+                )
+                .padding(.trailing, AbsorbBubble.edge)
+                .allowsHitTesting(false)
+        }
+    }
     var body: some View {
         HStack(spacing: 10) {
             iconView
@@ -535,5 +700,6 @@ private struct PickerRow: View {
                                        value: [rowKey: geo.frame(in: .named(space))])
             }
         )
+        .overlay(alignment: .trailing) { absorbBubble }
     }
 }

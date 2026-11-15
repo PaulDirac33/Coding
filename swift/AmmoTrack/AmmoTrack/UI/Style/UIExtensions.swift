@@ -18,8 +18,8 @@ extension MovementKind {
     var symbol: String {
         switch self {
         case .opening: return "flag.fill"
-        case .added: return "arrow.up"
-        case .shot: return "arrow.down"
+        case .added: return "arrow.down"
+        case .shot: return "arrow.up"
         case .adjustment: return "plusminus"
         }
     }

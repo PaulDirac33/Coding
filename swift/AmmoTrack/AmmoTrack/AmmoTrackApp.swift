@@ -27,7 +27,7 @@ struct AmmoTrackApp: App {
         WindowGroup("AmmoTrack") {
             RootView()
                 .environmentObject(store)
-                .frame(minWidth: 940, minHeight: 660)
+                .frame(minWidth: 940, minHeight: 600)
         }
         .windowStyle(.hiddenTitleBar)      // lo sfondo arriva fino al bordo alto, senza barra staccata
         .defaultSize(width: 1180, height: 780)
