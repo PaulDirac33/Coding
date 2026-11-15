@@ -82,8 +82,8 @@ extension EntryView {
             if canCommit && press.phase == .down {
                 statusKind = .hint
                 statusText = target.weaponID == nil
-                    ? "Premi ↓ per «aggiungere» o ↑ per «sparare»."
-                    : "Premi ↑ per «sparare»."
+                    ? "Premi ↓ per aggiungere o ↑ per sparare."
+                    : "Premi ↑ per sparare."
             }
             return .handled
         }
