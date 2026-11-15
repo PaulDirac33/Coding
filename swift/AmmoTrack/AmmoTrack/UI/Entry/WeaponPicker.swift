@@ -34,6 +34,9 @@ struct WeaponPicker: View {
     private static var closeAnimation: Animation {
         .spring(response: 0.5, dampingFraction: 0.88)
     }
+    /// Separatore fra calibro e matricola. Il trattino «–» (en dash) è un unico segno, come il "--" di LaTeX.
+    /// Alternative: " • " oppure " - ".
+    private static let separator = "  •  "
 
     /// Posizione di ogni riga, raccolta dalle righe stesse.
     @State private var rowFrames: [String: CGRect] = [:]
@@ -108,7 +111,7 @@ struct WeaponPicker: View {
         guard let w = currentWeapon else { return "Senza arma" }
         var parts = [store.config.caliberName(target.caliberID)]
         if !w.serial.isEmpty { parts.append("matr. \(w.serial)") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: Self.separator)
     }
 
     private var pickerButton: some View {
@@ -124,11 +127,12 @@ struct WeaponPicker: View {
         .buttonStyle(.plain)
     }
 
-    /// Con un'arma: miniatura, nome e matricola, a larghezza fissa (come prima).
+    /// Con un'arma: miniatura, nome e calibro/matricola sulla seconda riga. Nessuna larghezza fissa:
+    /// il tasto si stringe attorno al contenuto, come nel caso del solo calibro.
     private var fullLabel: some View {
         HStack(spacing: 10) {
             WeaponThumb(weapon: currentWeapon, caliberID: target.caliberID, size: 32)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .center, spacing: 1) {
                 Text(titleText)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.white)
@@ -138,13 +142,13 @@ struct WeaponPicker: View {
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
             }
-            Spacer(minLength: 8)
             Image(systemName: "chevron.up.chevron.down")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Palette.muted)
+                .padding(.leading, 4)
         }
-        .padding(.horizontal, 14)
-        .frame(width: buttonWidth, height: 52)
+        .padding(.horizontal, 16)
+        .frame(height: 52)
         .contentShape(Capsule())
     }
 
@@ -229,7 +233,7 @@ struct WeaponPicker: View {
                       space: rowsSpace,
                       weapon: w,
                       title: w.name,
-                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name) · matr. \(w.serial)")
+                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)matr. \(w.serial)")
         }
     }
 
