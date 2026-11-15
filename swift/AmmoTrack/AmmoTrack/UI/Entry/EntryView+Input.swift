@@ -82,20 +82,20 @@ extension EntryView {
             if canCommit && press.phase == .down {
                 statusKind = .hint
                 statusText = target.weaponID == nil
-                    ? "Premi ↓ per «sparate» o ↑ per «aggiunte»."
-                    : "Premi ↓ per «sparate»."
+                    ? "Premi ↓ per «aggiungere» o ↑ per «sparare»."
+                    : "Premi ↑ per «sparare»."
             }
             return .handled
         }
 
-        // Frecce: ↓ sparate, ↑ aggiunte, ←/→ provenienza. Partono solo alla pressione, non se tieni premuto.
+        // Frecce: ↓ aggiunte, ↑ sparate, ←/→ provenienza. Partono solo alla pressione, non se tieni premuto.
         let isArrow = press.key == .upArrow || press.key == .downArrow
             || press.key == .leftArrow || press.key == .rightArrow
         if isArrow {
             if press.phase == .down {
-                if press.key == .downArrow {
+                if press.key == .upArrow {
                     commit(.shot)
-                } else if press.key == .upArrow {
+                } else if press.key == .downArrow {
                     commit(.added)
                 } else if press.key == .leftArrow {
                     setProvenance(.reloaded)

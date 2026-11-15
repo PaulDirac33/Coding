@@ -2,10 +2,10 @@
 //  EntryView.swift
 //
 //  Pagina "Inserimento": una sola casella al centro (cifre grandi, cursore lampeggiante, data cliccabile),
-//  freccia giù = sparate, freccia su = aggiunte, selettore ricaricate/comprate, tasto dell'arma
+//  freccia giù = aggiunte, freccia su = sparate, selettore ricaricate/comprate, tasto dell'arma
 //  (il calibro è quello dell'arma), ultimo evento con "Annulla" e i saldi rispetto ai limiti.
 //
-//  Tastiera:  cifre   scrivono il numero        ↓  registra "sparate"     ↑  registra "aggiunte"
+//  Tastiera:  cifre   scrivono il numero        ↓  registra "aggiunte"     ↑  registra "sparate"
 //             ← →     ricaricate / comprate     ⌫  cancella l'ultima cifra   Esc  svuota (o chiude il selettore)
 //
 //  Il codice della tastiera e dell'inserimento è in EntryView+Input.swift.
@@ -58,8 +58,14 @@ struct EntryView: View {
     @State var gate = KeyGate()
     @FocusState var inputFocused: Bool
     @Namespace var buttonsNS      // per il morph del vetro fra i due tasti
+    @State var addShown = true               // «Aggiunte» visibile: segue showsAddButton, ma solo a banner chiuso
+    @State var pageHeight: CGFloat = 700     // altezza della pagina (misurata)
+    @State var slotTop: CGFloat = 300        // distanza del tasto armi dall'alto della pagina (misurata)
 
     let maxLength = 6        // cifre massime nella casella
+    /// Secondi fra l'inizio della chiusura del banner e il fondersi/dividersi dei tasti.
+    /// 0 = partono insieme; alzalo se vuoi che il banner sia già quasi chiuso.
+    let addButtonDelay: Double = 0.15
 
     // MARK: Scelta corrente
 
@@ -105,6 +111,9 @@ struct EntryView: View {
     var canCommit: Bool { quantity != nil && !target.caliberID.isEmpty }
     /// «Aggiunte» esiste solo senza arma: con un'arma scelta viene assorbito dal tasto «Sparate».
     var showsAddButton: Bool { target.weaponID == nil }
+    /// Altezza massima del banner armi aperto: dal tasto fino al fondo della pagina,
+    /// con lo stesso margine (14 pt) della scheda dei saldi.
+    var pickerRoom: CGFloat { max(160, pageHeight - slotTop - 14) }
 
     // MARK: Corpo
 
@@ -119,24 +128,21 @@ struct EntryView: View {
                 }
 
             VStack(spacing: 0) {
-                // In alto: banner armi + casella. Sopra a tutto (zIndex) perché il banner aperto sporge verso il basso.
-                VStack(spacing: 24) {
-                    weaponSlot
+                // In alto: provenienza, tasti, casella, banner armi.
+                // Il banner è l'ultimo e si apre verso il basso: non copre più nessun controllo.
+                // zIndex alto perché il banner aperto sporge sopra stato e saldi.
+                VStack(spacing: 20) {
+                    provenanceRow
+                    actionButtons
                     amountPill
+                    weaponSlot
                 }
                 .padding(.top, 8)
                 .zIndex(10)
 
                 Spacer(minLength: 24)
 
-                // Provenienza + i due tasti
-                VStack(spacing: 20) {
-                    provenanceRow
-                    actionButtons
-                }
-                .padding(.bottom, 16)
-
-                // Ultimo movimento attaccato ai saldi
+                // In basso: ultimo movimento attaccato ai saldi
                 VStack(spacing: 10) {
                     statusRow
                     BalanceCard()
@@ -145,7 +151,10 @@ struct EntryView: View {
             }
             .padding(.horizontal, 24)
         }
+        .coordinateSpace(.named("entryPage"))
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .onAppear {
+            addShown = showsAddButton
             gate.active = isActive
             installKeyMonitor()
             DispatchQueue.main.async { inputFocused = isActive }
@@ -169,6 +178,12 @@ struct EntryView: View {
                 statusKind = .none
             }
         }
+        .onChange(of: showsAddButton) { _, _ in
+            if !pickerOpen { syncAddButton() }      // cambio senza banner aperto (es. arma archiviata)
+        }
+        .onChange(of: pickerOpen) { _, open in
+            if !open { syncAddButton() }            // il banner si è chiuso: ora i tasti seguono la scelta
+        }
     }
 
     // MARK: Arma
@@ -177,8 +192,9 @@ struct EntryView: View {
     var weaponSlot: some View {
         Color.clear
             .frame(width: 320, height: 52)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("entryPage")).minY } action: { slotTop = $0 }
             .overlay(alignment: .top) {
-                WeaponPicker(target: targetBinding, isOpen: $pickerOpen)
+                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, maxPanelHeight: pickerRoom)
             }
             .zIndex(10)
     }
@@ -191,17 +207,27 @@ struct EntryView: View {
     var actionButtons: some View {
         GlassContainer(spacing: 24) {
             HStack(spacing: 24) {
-                directionButton(.shot)
-                if showsAddButton {
+                if addShown {
                     directionButton(.added)
                 }
+                directionButton(.shot)
             }
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: showsAddButton)
+    }
+
+    /// Allinea «Aggiunte» alla scelta corrente, ma solo a banner chiuso e dopo `addButtonDelay`:
+    /// il vetro dei tasti si fonde o si divide mentre il banner si richiude, non prima.
+    func syncAddButton() {
+        guard showsAddButton != addShown else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + addButtonDelay) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                addShown = showsAddButton
+            }
+        }
     }
 
     func directionButton(_ kind: MovementKind) -> some View {
-        let symbol = kind == .shot ? "arrow.down" : "arrow.up"
+        let symbol = kind == .shot ? "arrow.up" : "arrow.down"
         let title = kind == .shot ? "Sparate" : "Aggiunte"
         return VStack(spacing: 8) {
             Button {

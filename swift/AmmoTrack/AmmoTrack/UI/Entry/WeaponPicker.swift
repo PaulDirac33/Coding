@@ -19,6 +19,7 @@ struct WeaponPicker: View {
 
     @Binding var target: EntryTarget
     @Binding var isOpen: Bool
+    var maxPanelHeight: CGFloat = 360     // la decide EntryView: dal tasto fino al fondo della pagina
 
     @Namespace private var ns
 
@@ -40,6 +41,8 @@ struct WeaponPicker: View {
 
     /// Posizione di ogni riga, raccolta dalle righe stesse.
     @State private var rowFrames: [String: CGRect] = [:]
+    /// Altezza che le righe avrebbero senza scorrimento (misurata quando il banner è aperto).
+    @State private var rowsHeight: CGFloat = 0
 
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
@@ -181,10 +184,17 @@ struct WeaponPicker: View {
     }
 
     private var panel: some View {
-        Group {
-            if rowCount > 7 {
+        // Spazio per le righe: altezza massima del banner meno i 10 pt di margine sopra e sotto.
+        let room = max(120, maxPanelHeight - 20)
+        // Altezza naturale delle righe: misurata; la prima volta, una stima.
+        let natural = rowsHeight > 0
+            ? rowsHeight
+            : CGFloat(rowCount) * 46 + CGFloat(store.config.calibers.count) * 24
+        return Group {
+            if natural > room {
                 ScrollView { rows }
-                    .frame(height: 360)
+                    .scrollIndicators(.hidden)
+                    .frame(height: room)
             } else {
                 rows
             }
@@ -201,6 +211,7 @@ struct WeaponPicker: View {
         }
         .coordinateSpace(.named(rowsSpace))
         .onPreferenceChange(RowFramesKey.self) { rowFrames = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
         .background(alignment: .topLeading) { lens }
         .contentShape(Rectangle())
         .gesture(pickGesture)
