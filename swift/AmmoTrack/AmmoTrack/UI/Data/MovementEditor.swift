@@ -177,7 +177,7 @@ struct MovementEditor: View {
 
         let failure: String?
         if original == nil {
-            failure = store.add(m, trackUndo: false)
+            failure = store.add(m)
         } else {
             failure = store.update(m)
         }

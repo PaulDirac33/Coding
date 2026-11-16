@@ -7,7 +7,7 @@
 //
 //  Tastiera:  cifre   scrivono il numero        ↓  registra "aggiunte"     ↑  registra "sparate"
 //             ← →     ricaricate / comprate     ⌫  cancella l'ultima cifra   Esc  svuota (o chiude il selettore)
-//
+// ⌘Z annulla · ⇧⌘Z ripete
 //  Il codice della tastiera e dell'inserimento è in EntryView+Input.swift.
 //
 
@@ -490,12 +490,7 @@ struct EntryView: View {
     }
 
     // MARK: Stato e ultimo evento
-
-    var canUndo: Bool {
-        guard let id = store.lastAddedID else { return false }
-        return store.movements.contains { $0.id == id }
-    }
-
+    
     /// L'ultimo movimento presente nel file (anche se aggiunto da fuori o in una sessione precedente).
     var lastEventText: String? {
         guard let m = store.movements.last else { return nil }
@@ -517,19 +512,8 @@ struct EntryView: View {
     }
 
     var statusRow: some View {
-        HStack(spacing: 10) {
-            statusLine
-            if canUndo {
-                Button {
-                    undo()
-                } label: {
-                    Label("Annulla", systemImage: "arrow.uturn.backward")
-                }
-                .controlSize(.small)
-                .glassButton()
-            }
-        }
-        .frame(height: 30)
+        statusLine
+            .frame(height: 30)
     }
 
     /// Priorità: errore o avviso di questa pagina, poi problemi di lettura del file (rosso), poi l'ultimo evento.

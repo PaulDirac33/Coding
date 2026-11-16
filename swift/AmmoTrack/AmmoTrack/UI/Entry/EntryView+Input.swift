@@ -229,15 +229,4 @@ extension EntryView {
         }
         return notes.first
     }
-
-    /// Annulla l'ultimo movimento inserito in questa sessione.
-    func undo() {
-        if let error = store.undoLastAdded() {
-            fail(error)
-        } else {
-            statusKind = .none
-            statusText = ""
-        }
-        inputFocused = true
-    }
 }
