@@ -9,7 +9,7 @@
 //             ← →     ricaricate / comprate     ⌫  cancella l'ultima cifra   Esc  svuota (o chiude il selettore)
 // ⌘Z annulla · ⇧⌘Z ripete
 //  Il codice della tastiera e dell'inserimento è in EntryView+Input.swift.
-//
+// ⌘↓ apre il banner armi · ↑ ↓ ↩ lo guidano · ⌘↩ assorbe/espande le armi
 
 import SwiftUI
 
@@ -79,6 +79,7 @@ struct EntryView: View {
     @State var day: Date? = nil              // nil = oggi
     @State var showCalendar = false
     @State var pickerOpen = false
+    @State var pickerCommand = PickerCommand()   // ultimo comando da tastiera mandato al banner armi
     @State var statusText = ""
     @State var statusKind: EntryStatus = .none
     @State var flash = false
@@ -235,7 +236,10 @@ struct EntryView: View {
             if !pickerOpen { syncControls() }                       // cambio a banner chiuso (es. arma archiviata)
         }
         .onChange(of: pickerOpen) { _, open in
-            if !open { syncControls(after: addButtonDelay) }        // il banner si è chiuso
+            if !open {
+                syncControls(after: addButtonDelay)        // il banner si è chiuso
+                if isActive { inputFocused = true }        // e si torna a scrivere le cifre
+            }
         }
         .onChange(of: storedProvenance) { _, _ in
             syncLook()                                              // selettore mosso: il colore segue subito, anche a banner aperto
@@ -253,7 +257,8 @@ struct EntryView: View {
             .frame(width: 320, height: 52)
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("entryPage")).minY } action: { slotTop = $0 }
             .overlay(alignment: .top) {
-                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, maxPanelHeight: pickerRoom)
+                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, maxPanelHeight: pickerRoom,
+                             command: pickerCommand)
             }
             .zIndex(10)
     }

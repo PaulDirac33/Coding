@@ -23,6 +23,10 @@ extension EntryView {
             withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { pickerOpen = false }
         }
     }
+    /// Manda un comando da tastiera al banner armi.
+    func sendPicker(_ key: PickerKey) {
+        pickerCommand = PickerCommand(id: pickerCommand.id + 1, key: key)
+    }
 
     // MARK: Cifre
 
@@ -76,6 +80,11 @@ extension EntryView {
             if pickerOpen { closePicker() } else { setInput("") }
             return .handled
         }
+        // Banner armi aperto: ↑ ↓ e invio sono del banner (li gestisce il monitor qui sotto).
+        // Questa è solo una rete di sicurezza: con il banner aperto non deve mai partire uno sparo.
+        if pickerOpen && (press.key == .upArrow || press.key == .downArrow || press.key == .return) {
+            return .handled
+        }
 
         // Invio non registra (le azioni sono due: ↓ e ↑): ricordo come si fa.
         if press.key == .return || press.characters == "\u{3}" {
@@ -116,23 +125,63 @@ extension EntryView {
         return handled ? .handled : .ignored
     }
 
-    /// Rete di sicurezza per la cancellazione: intercetta Backspace a livello di finestra,
-    /// così non parte il "blip" anche se SwiftUI non recapita il tasto alla casella.
-    /// Agisce solo se questa è la pagina visibile e non stai scrivendo in un altro campo di testo.
+    /// Monitor dei tasti a livello di finestra: agisce solo se questa è la pagina visibile e non stai
+    /// scrivendo in un campo di testo né hai un foglio aperto. Gestisce:
+    ///   ⌫ / ⌦   cancella l'ultima cifra (rete di sicurezza contro il "blip")
+    ///   ⌘↓       apre il banner armi
+    ///   a banner aperto: ↑ ↓ cambiano voce · ↩ sceglie · ⌘↩ assorbe/espande le armi del calibro · Esc chiude
     func installKeyMonitor() {
         #if os(macOS)
         guard keyMonitor == nil else { return }
         let gate = self.gate
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let code = event.keyCode                 // 51 = backspace, 117 = cancella in avanti
+            // 51 = backspace, 117 = cancella in avanti, 125 = ↓, 126 = ↑, 36 = invio, 76 = invio tastierino, 53 = Esc.
+            // Le frecce portano anche i flag "numericPad" e "function": tengo solo i modificatori veri.
+            let code = event.keyCode
             let mods = event.modifierFlags.intersection([.command, .control, .option])
             let consumed: Bool = MainActor.assumeIsolated {
-                guard code == 51 || code == 117, mods.isEmpty else { return false }
                 guard gate.active else { return false }
                 if NSApp.keyWindow?.firstResponder is NSTextView { return false }
                 if NSApp.keyWindow?.attachedSheet != nil { return false }
-                deleteLast()
-                return true
+
+                // Cancellazione
+                if (code == 51 || code == 117) && mods.isEmpty {
+                    deleteLast()
+                    return true
+                }
+
+                // ⌘↓: apre il banner armi (a banner già aperto non fa nulla)
+                if code == 125 && mods == .command {
+                    if !event.isARepeat { sendPicker(.open) }
+                    return true
+                }
+
+                // Da qui in poi solo a banner aperto
+                guard pickerOpen else { return false }
+
+                if mods.isEmpty {
+                    switch code {
+                    case 126:                       // ↑
+                        sendPicker(.up)
+                        return true
+                    case 125:                       // ↓
+                        sendPicker(.down)
+                        return true
+                    case 36, 76:                    // ↩
+                        if !event.isARepeat { sendPicker(.confirm) }
+                        return true
+                    case 53:                        // Esc
+                        closePicker()
+                        return true
+                    default:
+                        return false
+                    }
+                }
+                if mods == .command && (code == 36 || code == 76) {      // ⌘↩
+                    if !event.isARepeat { sendPicker(.toggle) }
+                    return true
+                }
+                return false
             }
             return consumed ? nil : event
         }
