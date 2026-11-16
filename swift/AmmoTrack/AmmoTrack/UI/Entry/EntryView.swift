@@ -44,6 +44,23 @@ final class KeyGate {
 final class SyncToken {
     var value = 0
 }
+/// Tremolio orizzontale, come quando si sbaglia la password.
+/// `shakes` va aumentato di 1 per ogni scossa: parte e finisce a riposo.
+struct ShakeEffect: GeometryEffect {
+    var travel: CGFloat = 9          // ampiezza in punti
+    var oscillations: CGFloat = 3    // avanti e indietro per scossa
+    var shakes: CGFloat
+
+    var animatableData: CGFloat {
+        get { shakes }
+        set { shakes = newValue }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(
+            translationX: travel * sin(shakes * .pi * 2 * oscillations), y: 0))
+    }
+}
 
 // MARK: - Vista
 
@@ -65,6 +82,8 @@ struct EntryView: View {
     @State var statusText = ""
     @State var statusKind: EntryStatus = .none
     @State var flash = false
+    @State var flashError = false            // lampo rosso: inserimento rifiutato
+    @State var shakes: CGFloat = 0           // contatore del tremolio
     @State var keyMonitor: Any? = nil
     @State var gate = KeyGate()
     @State var syncToken = SyncToken()
@@ -335,8 +354,14 @@ struct EntryView: View {
                 .stroke(Color.green, lineWidth: 1.5)
                 .opacity(flash ? 1 : 0)          // solo il lampo verde dopo l'inserimento
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Palette.danger, lineWidth: 1.5)
+                .opacity(flashError ? 1 : 0)
+        )
         .animation(.easeOut(duration: 0.25), value: inputFocused)
         .animation(.easeOut(duration: 0.25), value: flash)
+        .modifier(ShakeEffect(shakes: shakes))
         .focusable(isActive, interactions: .edit)
         .focused($inputFocused)
         .focusEffectDisabled()
@@ -352,7 +377,7 @@ struct EntryView: View {
             ForEach(Array(inputText.enumerated()), id: \.offset) { _, ch in
                 Text(String(ch))
                     .font(amountFont)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(flashError ? Palette.danger : Color.white)
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.3)
                             .combined(with: .opacity)

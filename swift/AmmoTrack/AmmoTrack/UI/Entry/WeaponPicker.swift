@@ -30,6 +30,12 @@ struct WeaponPicker: View {
 
     /// Spazio di coordinate in cui le righe dicono dove stanno (serve alla bolla).
     private let rowsSpace = "pickerRows"
+    /// Spazio di coordinate dell'area visibile del banner (serve a sapere quali righe si vedono).
+    private let viewportSpace = "pickerViewport"
+    /// Margine sopra e sotto le righe dentro l'area che scorre: lascia posto alla bolla premuta, che sporge di 3 pt.
+    private let scrollPad: CGFloat = 4
+    /// Altezza riservata ai pallini "ci sono altre voci" in alto o in basso.
+    private let moreStrip: CGFloat = 18
 
     /// Chiusura del banner dopo la scelta di una voce: più lenta dell'apertura (che resta 0,42 / 0,82).
     private static var closeAnimation: Animation {
@@ -57,6 +63,12 @@ struct WeaponPicker: View {
     @AppStorage("picker.collapsedCalibers") private var collapsedRaw = ""
     /// Posizione delle bolle piccole (una per calibro che ha armi), raccolta dalle righe.
     @State private var toggleFrames: [String: CGRect] = [:]
+    /// false = il banner appena aperto mostra le righe senza ScrollView; diventa true a trasformazione finita.
+    @State private var scrollReady = false
+    /// Numero dell'ultima apertura: i timer delle aperture precedenti non fanno più nulla.
+    @State private var scrollToken = SyncToken()
+    /// Posizione in alto delle righe rispetto all'area visibile del banner (cambia quando scorri).
+    @State private var contentTop: CGFloat = 0
 
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
@@ -136,7 +148,7 @@ struct WeaponPicker: View {
 
     private var pickerButton: some View {
         Button {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { isOpen = true }
+            openPicker()
         } label: {
             if isCaliberOnly {
                 compactLabel
@@ -145,6 +157,18 @@ struct WeaponPicker: View {
             }
         }
         .buttonStyle(.plain)
+    }
+    /// Apre il banner. Prima di aprire azzera lo scorrimento, così il banner nasce già senza ScrollView;
+    /// la ScrollView arriva a trasformazione finita. Ogni apertura invalida i timer delle precedenti.
+    private func openPicker() {
+        scrollReady = false
+        scrollToken.value += 1
+        let ticket = scrollToken.value
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { isOpen = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            guard scrollToken.value == ticket, isOpen else { return }
+            scrollReady = true
+        }
     }
 
     /// Con un'arma: miniatura, nome e calibro/matricola sulla seconda riga. Nessuna larghezza fissa:
@@ -200,23 +224,94 @@ struct WeaponPicker: View {
         }
     }
 
+    private var roomForRows: CGFloat { max(120, maxPanelHeight - 20) }
+    private var fullEstimate: CGFloat {
+        CGFloat(rowCount) * 50 + CGFloat(store.config.calibers.count) * 24
+    }
+    /// true = le righe non entrano nel banner: servono ritaglio o scorrimento.
+    private var isLimited: Bool { fullEstimate > roomForRows }
+    /// Altezza dell'area visibile quando le righe non entrano.
+    private var viewportHeight: CGFloat {
+        min(roomForRows, (rowsHeight > 0 ? rowsHeight : fullEstimate) + scrollPad * 2)
+    }
+    /// Altezza che il banner mostra davvero. Se in basso c'è una voce nascosta, il banner finisce subito
+    /// sotto l'ultima voce visibile (più la fascia dei pallini). Altrimenti è l'altezza piena.
+    private var shownHeight: CGFloat {
+        let v = visibility
+        guard v.below else { return viewportHeight }
+        let lastBottom = rowFrames
+            .filter { !v.hidden.contains($0.key) }
+            .values.map { $0.maxY }.max()
+        guard let lastBottom else { return viewportHeight }
+        // 3 pt = quanto sporge la bolla premuta sull'ultima voce.
+        return min(viewportHeight, lastBottom + contentTop + 3 + moreStrip)
+    }
+    /// Zona occupata da una riga: per la riga di un calibro include la sua intestazione, che sta sopra.
+    private func rowSpan(_ key: String, _ r: CGRect) -> (minY: CGFloat, maxY: CGFloat) {
+        (key.hasSuffix("|") ? r.minY - 16 : r.minY, r.maxY)
+    }
+
+    /// Di quanto salgono tutte le voci per chiudere lo spazio fra i pallini in alto e la prima voce visibile.
+    /// È 0 se in alto non ci sono voci nascoste.
+    private var topShift: CGFloat {
+        let v = visibility
+        guard v.above else { return 0 }
+        let firstTop = rowFrames
+            .filter { !v.hidden.contains($0.key) }
+            .map { rowSpan($0.key, $0.value).minY }
+            .min()
+        guard let firstTop else { return 0 }
+        // La prima voce deve stare a 3 pt (margine della bolla) + la fascia dei pallini dal bordo alto.
+        return max(0, firstTop + contentTop - (3 + moreStrip))
+    }
+
     private var panel: some View {
-        // Spazio per le righe: altezza massima del banner meno i 10 pt di margine sopra e sotto.
-        let room = max(120, maxPanelHeight - 20)
-        // Stima con TUTTE le armi visibili: decide se serve lo scorrimento. Così assorbire un calibro
-        // non cambia mai la struttura (ScrollView ↔ vista normale) e le righe non sfarfallano.
-        let full = CGFloat(rowCount) * 50 + CGFloat(store.config.calibers.count) * 24
+        let shift = topShift
         return Group {
-            if full > room {
-                ScrollView { rows }
-                    .scrollIndicators(.hidden)
-                    .frame(height: min(room, rowsHeight > 0 ? rowsHeight : full))
+            if isLimited {
+                Group {
+                    if scrollReady {
+                        ScrollView { rows.padding(.horizontal, 10).padding(.vertical, scrollPad) }
+                            .scrollIndicators(.never)
+                    } else {
+                        rows
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, scrollPad)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(height: viewportHeight, alignment: .top)       // altezza piena: lo scorrimento non cambia
+                .coordinateSpace(.named(viewportSpace))               // PRIMA dello spostamento, sennò la misura si morde la coda
+                .offset(y: -shift)                                    // le voci salgono
+                .frame(height: max(shownHeight - shift, 0), alignment: .top)   // il banner si accorcia dal basso
+                .clipped()
+                .animation(Self.absorbAnimation, value: visibility.hidden)
             } else {
                 rows
+                    .padding(.horizontal, 10)
+                    .coordinateSpace(.named(viewportSpace))
             }
         }
-        .padding(10)
+        .overlay(alignment: .top) { moreDots(visibility.above, top: true) }
+        .overlay(alignment: .bottom) { moreDots(visibility.below, top: false) }
+        .padding(.vertical, 10)
         .frame(width: panelWidth)
+    }
+    /// Tre bollicine: dicono che sopra o sotto ci sono altre voci (scorri, o alza la finestra).
+    private func moreDots(_ shown: Bool, top: Bool) -> some View {
+        ZStack {
+            if shown {
+                HStack(spacing: 7) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        AbsorbGlass().frame(width: 8, height: 8)
+                    }
+                }
+                .frame(height: moreStrip)
+                .transition(.opacity.combined(with: .offset(y: top ? -10 : 10)))
+            }
+        }
+        .animation(Self.absorbAnimation, value: shown)
+        .allowsHitTesting(false)
     }
 
     private var rows: some View {
@@ -230,6 +325,7 @@ struct WeaponPicker: View {
         .onPreferenceChange(RowFramesKey.self) { rowFrames = $0 }
         .onPreferenceChange(ToggleFramesKey.self) { toggleFrames = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(viewportSpace)).minY } action: { contentTop = $0 }
         .background(alignment: .topLeading) { lens }
         .contentShape(Rectangle())
         .gesture(pickGesture)
@@ -239,11 +335,11 @@ struct WeaponPicker: View {
     private func caliberSection(_ cal: Caliber) -> some View {
         let all = store.config.activeWeapons(for: cal.id)
         let isAbsorbed = absorbed.contains(cal.id)
-        // Con il calibro assorbito resta visibile solo l'arma selezionata (se è di questo calibro):
-        // la bolla grande ha sempre una riga su cui stare.
         let shown = isAbsorbed ? all.filter { $0.id == target.weaponID } : all
         let hidden = all.count - shown.count
         let balance = store.ledger.balance(for: cal.id)
+        let unseen = visibility.hidden
+        let caliberKey = key(EntryTarget(caliberID: cal.id, weaponID: nil))
 
         HStack(spacing: 6) {
             Text(cal.name.uppercased())
@@ -261,8 +357,10 @@ struct WeaponPicker: View {
         }
         .padding(.horizontal, 10)
         .padding(.top, 6)
+        .opacity(unseen.contains(caliberKey) ? 0 : 1)
+        .animation(.easeOut(duration: 0.15), value: unseen.contains(caliberKey))
 
-        PickerRow(rowKey: key(EntryTarget(caliberID: cal.id, weaponID: nil)),
+        PickerRow(rowKey: caliberKey,
                   space: rowsSpace,
                   weapon: nil,
                   title: cal.displayName,
@@ -270,14 +368,16 @@ struct WeaponPicker: View {
                   cartridge: cal.cartridgeStyle,
                   toggleID: all.isEmpty ? nil : cal.id,
                   absorbed: isAbsorbed,
-                  togglePressed: pressedToggle == cal.id)
+                  togglePressed: pressedToggle == cal.id,
+                  faded: unseen.contains(caliberKey))
         ForEach(shown) { w in
             PickerRow(rowKey: key(EntryTarget(caliberID: cal.id, weaponID: w.id)),
                       space: rowsSpace,
                       weapon: w,
                       title: w.name,
-                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)\(w.serial)")
-                .transition(Self.absorbTransition)  // scorrono verso il calibro e sfumano
+                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)\(w.serial)",
+                      faded: unseen.contains(key(EntryTarget(caliberID: cal.id, weaponID: w.id))))
+                .transition(Self.absorbTransition)
         }
     }
 
@@ -297,8 +397,10 @@ struct WeaponPicker: View {
 
     /// Calibro la cui bolla piccola contiene il punto (area un po' più larga della bolla).
     private func toggleHit(_ p: CGPoint) -> String? {
-        toggleFrames.first {
-            $0.value.insetBy(dx: -AbsorbBubble.hitSlop, dy: -AbsorbBubble.hitSlop).contains(p)
+        let hidden = visibility.hidden
+        return toggleFrames.first {
+            !hidden.contains("\($0.key)|")
+                && $0.value.insetBy(dx: -AbsorbBubble.hitSlop, dy: -AbsorbBubble.hitSlop).contains(p)
         }?.key
     }
     // MARK: Bolla e selezione
@@ -350,7 +452,7 @@ struct WeaponPicker: View {
     private func finish(at point: CGPoint) {
         // Sceglie la riga più vicina al punto di rilascio: è quella su cui la bolla si è già fermata,
         // anche se rilasci fra due righe o su un'intestazione di calibro.
-        guard let hit = rowFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
+        guard let hit = selectableFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
               let t = targets[hit] else { return }
 
         let changed = t != target
@@ -383,7 +485,7 @@ struct WeaponPicker: View {
         let rest = restRect(selectedKey, full)
         guard let y = drag else { return rest }
 
-        let ordered = rowFrames.sorted { $0.value.midY < $1.value.midY }
+        let ordered = selectableFrames.sorted { $0.value.midY < $1.value.midY }
         guard let first = ordered.first, let last = ordered.last else { return rest }
         let p = min(max(y, first.value.midY), last.value.midY)     // il puntatore, fra la prima e l'ultima riga
 
@@ -423,14 +525,59 @@ struct WeaponPicker: View {
     /// Quanto la bolla viene attirata dal centro delle righe mentre trascini (0 = segue il dito alla pari).
     /// Sopra 0,8 si "appiccica" troppo.
     private let magnet: CGFloat = 0.3
+    /// Righe visibili per intero (con 3 pt di margine per la bolla premuta): le sole su cui la bolla può andare.
+    /// Se le righe entrano tutte nel banner, sono tutte.
+    /// Quali righe non si vedono per intero nel banner, e se ce ne sono sopra o sotto.
+    /// Quando ci sono, riservo una striscia ai pallini e nascondo anche le righe che ci finirebbero sopra.
+    private var visibility: (hidden: Set<String>, above: Bool, below: Bool) {
+        guard isLimited, !rowFrames.isEmpty else { return ([], false, false) }
+        let top = -contentTop + 3
+        let bottom = -contentTop + viewportHeight - 3
 
+        // La riga di un calibro porta con sé la sua intestazione, che sta sopra.
+        func span(_ key: String, _ r: CGRect) -> (minY: CGFloat, maxY: CGFloat) {
+            (key.hasSuffix("|") ? r.minY - 16 : r.minY, r.maxY)
+        }
+
+        var above = false
+        var below = false
+        for (k, r) in rowFrames {
+            let s = span(k, r)
+            if s.minY < top { above = true }
+            if s.maxY > bottom { below = true }
+        }
+        guard above || below else { return ([], false, false) }
+
+        let topLimit = top + (above ? moreStrip : 0)
+        let bottomLimit = bottom - (below ? moreStrip : 0)
+        var hidden = Set<String>()
+        for (k, r) in rowFrames {
+            let s = span(k, r)
+            if s.minY < topLimit || s.maxY > bottomLimit { hidden.insert(k) }
+        }
+        // Banner così basso da non mostrare nemmeno una voce: meglio non nascondere nulla.
+        if hidden.count == rowFrames.count { return ([], false, false) }
+        return (hidden, above, below)
+    }
+
+    /// Le righe su cui la bolla può andare: quelle che si vedono per intero.
+    private var selectableFrames: [String: CGRect] {
+        let hidden = visibility.hidden
+        return rowFrames.filter { !hidden.contains($0.key) }
+    }
+
+    private var wallFrames: [CGRect] { Array(selectableFrames.values) }
+
+    /// A riposo la bolla grande non si vede se la sua riga è nascosta.
+    private var lensHidden: Bool { drag == nil && visibility.hidden.contains(selectedKey) }
     /// I muri della bolla: in alto e in basso i bordi della prima e dell'ultima riga (+2 pt di respiro),
     /// ai lati i bordi delle righe più `sideRoom`.
     private var wallRange: (top: CGFloat, bottom: CGFloat, left: CGFloat, right: CGFloat)? {
-        guard let top = rowFrames.values.map({ $0.minY }).min(),
-              let bottom = rowFrames.values.map({ $0.maxY }).max(),
-              let left = rowFrames.values.map({ $0.minX }).min(),
-              let right = rowFrames.values.map({ $0.maxX }).max() else { return nil }
+        let rects = wallFrames
+        guard let top = rects.map({ $0.minY }).min(),
+              let bottom = rects.map({ $0.maxY }).max(),
+              let left = rects.map({ $0.minX }).min(),
+              let right = rects.map({ $0.maxX }).max() else { return nil }
         return (top - 0, bottom + 2, left - sideRoom, right + sideRoom)
     }
 
@@ -444,6 +591,8 @@ struct WeaponPicker: View {
                                            wallTop: walls.top, wallBottom: walls.bottom,
                                            wallLeft: walls.left, wallRight: walls.right))
                 .animation(.spring(response: 0.42, dampingFraction: 0.82), value: rowFrames)
+                .opacity(lensHidden ? 0 : 1)
+                .animation(.easeOut(duration: 0.15), value: lensHidden)
         }
     }
 }
@@ -623,6 +772,7 @@ private struct PickerRow: View {
     var toggleID: String? = nil      // se c'è, è un calibro con armi: a destra compare la bolla piccola
     var absorbed = false             // true = armi assorbite (bolla piccola)
     var togglePressed = false        // la bolla è premuta in questo momento
+    var faded = false                // la riga non si vede per intero nel banner: sfuma via
 
     /// true per la riga del solo calibro (nessuna arma, con la cartuccia).
     private var isCaliberRow: Bool {
@@ -710,5 +860,7 @@ private struct PickerRow: View {
             }
         )
         .overlay(alignment: .trailing) { absorbBubble }
+        .opacity(faded ? 0 : 1)
+        .animation(.easeOut(duration: 0.15), value: faded)
     }
 }

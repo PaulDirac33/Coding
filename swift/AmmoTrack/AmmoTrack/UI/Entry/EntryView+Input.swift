@@ -157,6 +157,14 @@ extension EntryView {
             withAnimation(.easeOut(duration: 0.4)) { flash = false }
         }
     }
+    /// Inserimento rifiutato: la casella trema e le cifre e il bordo lampeggiano di rosso.
+    func reject() {
+        withAnimation(.linear(duration: 0.45)) { shakes += 1 }
+        withAnimation(.easeOut(duration: 0.15)) { flashError = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            withAnimation(.easeOut(duration: 0.4)) { flashError = false }
+        }
+    }
 
     /// Registra il numero scritto come «sparate» (.shot) o «aggiunte» (.added), con la provenienza scelta.
     /// Oggi: data e ora di adesso. Giorno passato (dal calendario): solo la data, con l'ora convenzionale.
@@ -187,8 +195,9 @@ extension EntryView {
                          caliberID: t.caliberID,
                          quantity: q,
                          weaponID: kind == .shot ? t.weaponID : nil)
-        if let error = store.add(m) {
+        if let error = store.add(m, allowOverdraw: false) {
             fail(error)
+            reject()
             return
         }
 
@@ -208,10 +217,6 @@ extension EntryView {
         var notes: [String] = []
         let name = store.config.caliberName(m.caliberID)
 
-        if let row = store.ledger.row(id: m.id), row.isOverdrawn {
-            let value = row.after.value(m.provenance)
-            notes.append("Saldo \(m.provenance.label.lowercased()) \(name) negativo (\(value)): manca un movimento?")
-        }
         if m.delta > 0 {
             let balance = store.ledger.balance(for: m.caliberID)
             if let limit = store.config.caliber(m.caliberID)?.limit, balance.total > limit {
