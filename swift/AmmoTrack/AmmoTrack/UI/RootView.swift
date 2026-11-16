@@ -58,6 +58,9 @@ struct RootView: View {
         }
         .onAppear { store.start() }
         .onReceive(tick) { _ in store.refresh() }
+        .onAppear { store.start() }
+        .onReceive(tick) { _ in store.refresh() }
+        .pageShortcuts(page: $page)      // ← NUOVA RIGA
     }
 
     // MARK: Barra superiore
