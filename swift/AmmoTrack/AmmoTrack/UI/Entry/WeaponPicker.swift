@@ -30,6 +30,10 @@ struct WeaponPicker: View {
 
     /// Spazio di coordinate in cui le righe dicono dove stanno (serve alla bolla).
     private let rowsSpace = "pickerRows"
+    /// Spazio di coordinate dell'area visibile del banner (serve a sapere quali righe si vedono).
+    private let viewportSpace = "pickerViewport"
+    /// Margine sopra e sotto le righe dentro l'area che scorre: lascia posto alla bolla premuta, che sporge di 3 pt.
+    private let scrollPad: CGFloat = 4
 
     /// Chiusura del banner dopo la scelta di una voce: più lenta dell'apertura (che resta 0,42 / 0,82).
     private static var closeAnimation: Animation {
@@ -61,6 +65,8 @@ struct WeaponPicker: View {
     @State private var scrollReady = false
     /// Numero dell'ultima apertura: i timer delle aperture precedenti non fanno più nulla.
     @State private var scrollToken = SyncToken()
+    /// Posizione in alto delle righe rispetto all'area visibile del banner (cambia quando scorri).
+    @State private var contentTop: CGFloat = 0
 
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
@@ -216,30 +222,37 @@ struct WeaponPicker: View {
         }
     }
 
-    private var panel: some View {
-        // Spazio per le righe: altezza massima del banner meno i 10 pt di margine sopra e sotto.
-        let room = max(120, maxPanelHeight - 20)
-        // Stima con TUTTE le armi visibili (lasciala come l'avevi).
-        let full = CGFloat(rowCount) * 50 + CGFloat(store.config.calibers.count) * 24
-        let height = min(room, rowsHeight > 0 ? rowsHeight : full)
+    private var roomForRows: CGFloat { max(120, maxPanelHeight - 20) }
+    private var fullEstimate: CGFloat {
+        CGFloat(rowCount) * 50 + CGFloat(store.config.calibers.count) * 24
+    }
+    /// true = le righe non entrano nel banner: servono ritaglio o scorrimento.
+    private var isLimited: Bool { fullEstimate > roomForRows }
+    /// Altezza dell'area visibile quando le righe non entrano.
+    private var viewportHeight: CGFloat {
+        min(roomForRows, (rowsHeight > 0 ? rowsHeight : fullEstimate) + scrollPad * 2)
+    }
 
-        return Group {
-            if full > room {
+    private var panel: some View {
+        Group {
+            if isLimited {
                 if scrollReady {
-                    ScrollView { rows.padding(.horizontal, 10) }
+                    ScrollView { rows.padding(.horizontal, 10).padding(.vertical, scrollPad) }
                         .scrollIndicators(.never)
-                        .frame(height: height)
+                        .frame(height: viewportHeight)
                 } else {
                     rows
                         .padding(.horizontal, 10)
+                        .padding(.vertical, scrollPad)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(height: height, alignment: .top)
+                        .frame(height: viewportHeight, alignment: .top)
                         .clipped()
                 }
             } else {
                 rows.padding(.horizontal, 10)
             }
         }
+        .coordinateSpace(.named(viewportSpace))
         .padding(.vertical, 10)
         .frame(width: panelWidth)
     }
@@ -255,6 +268,7 @@ struct WeaponPicker: View {
         .onPreferenceChange(RowFramesKey.self) { rowFrames = $0 }
         .onPreferenceChange(ToggleFramesKey.self) { toggleFrames = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(viewportSpace)).minY } action: { contentTop = $0 }
         .background(alignment: .topLeading) { lens }
         .contentShape(Rectangle())
         .gesture(pickGesture)
@@ -375,7 +389,7 @@ struct WeaponPicker: View {
     private func finish(at point: CGPoint) {
         // Sceglie la riga più vicina al punto di rilascio: è quella su cui la bolla si è già fermata,
         // anche se rilasci fra due righe o su un'intestazione di calibro.
-        guard let hit = rowFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
+        guard let hit = selectableFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
               let t = targets[hit] else { return }
 
         let changed = t != target
@@ -408,7 +422,7 @@ struct WeaponPicker: View {
         let rest = restRect(selectedKey, full)
         guard let y = drag else { return rest }
 
-        let ordered = rowFrames.sorted { $0.value.midY < $1.value.midY }
+        let ordered = selectableFrames.sorted { $0.value.midY < $1.value.midY }
         guard let first = ordered.first, let last = ordered.last else { return rest }
         let p = min(max(y, first.value.midY), last.value.midY)     // il puntatore, fra la prima e l'ultima riga
 
@@ -448,14 +462,31 @@ struct WeaponPicker: View {
     /// Quanto la bolla viene attirata dal centro delle righe mentre trascini (0 = segue il dito alla pari).
     /// Sopra 0,8 si "appiccica" troppo.
     private let magnet: CGFloat = 0.3
+    /// Righe visibili per intero (con 3 pt di margine per la bolla premuta): le sole su cui la bolla può andare.
+    /// Se le righe entrano tutte nel banner, sono tutte.
+    private var selectableFrames: [String: CGRect] {
+        guard isLimited else { return rowFrames }
+        let top = -contentTop
+        let bottom = top + viewportHeight
+        let seen = rowFrames.filter { $0.value.minY >= top + 3 && $0.value.maxY <= bottom - 3 }
+        return seen.isEmpty ? rowFrames : seen
+    }
+
+    /// Righe che fissano i muri della bolla: quelle selezionabili più quella attuale (anche se fuori vista).
+    private var wallFrames: [CGRect] {
+        var frames = selectableFrames
+        if let current = rowFrames[selectedKey] { frames[selectedKey] = current }
+        return Array(frames.values)
+    }
 
     /// I muri della bolla: in alto e in basso i bordi della prima e dell'ultima riga (+2 pt di respiro),
     /// ai lati i bordi delle righe più `sideRoom`.
     private var wallRange: (top: CGFloat, bottom: CGFloat, left: CGFloat, right: CGFloat)? {
-        guard let top = rowFrames.values.map({ $0.minY }).min(),
-              let bottom = rowFrames.values.map({ $0.maxY }).max(),
-              let left = rowFrames.values.map({ $0.minX }).min(),
-              let right = rowFrames.values.map({ $0.maxX }).max() else { return nil }
+        let rects = wallFrames
+        guard let top = rects.map({ $0.minY }).min(),
+              let bottom = rects.map({ $0.maxY }).max(),
+              let left = rects.map({ $0.minX }).min(),
+              let right = rects.map({ $0.maxX }).max() else { return nil }
         return (top - 0, bottom + 2, left - sideRoom, right + sideRoom)
     }
 
