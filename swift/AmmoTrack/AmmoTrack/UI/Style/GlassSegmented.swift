@@ -34,7 +34,7 @@ struct GlassSegmented<T: Hashable, Content: View>: View {
          selection: Binding<T>,
          segmentWidth: CGFloat = 80,
          totalWidth: CGFloat? = nil,
-         walls: Edge.Set = [],              // ← nuovo
+         walls: Edge.Set = .horizontal,              // ← nuovo
          @ViewBuilder content: @escaping (T, Bool) -> Content) {
         self.options = options
         self._selection = selection

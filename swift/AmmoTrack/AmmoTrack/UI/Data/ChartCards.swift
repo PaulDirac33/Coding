@@ -145,6 +145,12 @@ func isWhole(_ value: AxisValue) -> Bool {
     guard let v = value.as(Double.self) else { return true }
     return abs(v - v.rounded()) < 1e-9
 }
+/// Testo di un'etichetta numerica dell'asse, con i separatori del sistema.
+func axisNumberText(_ value: AxisValue) -> String {
+    if let n = value.as(Int.self) { return numText(n) }
+    if let d = value.as(Double.self) { return decimalText(d) }
+    return ""
+}
 
 /// Asse Y con le linee della griglia e fondo leggero del grafico (come nell'altra app).
 func gridPlot<C: View>(_ chart: C, integerY: Bool = true) -> some View {
@@ -153,7 +159,7 @@ func gridPlot<C: View>(_ chart: C, integerY: Bool = true) -> some View {
             AxisMarks(position: .leading) { value in
                 if !integerY || isWhole(value) {
                     AxisGridLine().foregroundStyle(Palette.grid)
-                    AxisValueLabel()
+                    AxisValueLabel { Text(axisNumberText(value)) }
                 }
             }
         }
@@ -451,9 +457,9 @@ struct WeaponsCard: View {
                 }
         }
         .chartXAxis {
-            AxisMarks { _ in
+            AxisMarks { value in
                 AxisGridLine().foregroundStyle(Palette.grid)
-                AxisValueLabel()
+                AxisValueLabel { Text(axisNumberText(value)) }
             }
         }
         .chartPlotStyle { plot in
@@ -541,9 +547,9 @@ struct HistogramCard: View {
         .chartYScale(domain: 0...top)
         .chartXSelection(value: $selected)
         .chartXAxis {
-            AxisMarks { _ in
+            AxisMarks { value in
                 AxisGridLine().foregroundStyle(Palette.grid)
-                AxisValueLabel()
+                AxisValueLabel { Text(axisNumberText(value)) }
             }
         }
         return gridPlot(styled)

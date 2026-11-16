@@ -27,12 +27,34 @@ extension MovementKind {
 
 // MARK: - Formati
 
-func numText(_ v: Int) -> String {
-    v.formatted()
+/// Numeri a video con i separatori del sistema (anche quelli personalizzati in Impostazioni di Sistema).
+/// `.formatted()` li ignora; NumberFormatter no. I formattatori si creano una volta sola perché costano.
+/// `nonisolated(unsafe)`: NumberFormatter è sicuro da usare da più thread, ma Swift non lo sa.
+nonisolated private let integerFormatter = makeNumberFormatter(maxFraction: 0)
+nonisolated private let oneDecimalFormatter = makeNumberFormatter(maxFraction: 1)
+
+nonisolated private func makeNumberFormatter(maxFraction: Int) -> NumberFormatter {
+    let f = NumberFormatter()
+    f.locale = Locale.autoupdatingCurrent
+    f.numberStyle = .decimal
+    f.usesGroupingSeparator = true
+    f.minimumFractionDigits = 0
+    f.maximumFractionDigits = maxFraction
+    return f
 }
 
-func decimalText(_ v: Double, maxFraction: Int = 1) -> String {
-    v.formatted(.number.precision(.fractionLength(0...maxFraction)))
+nonisolated func numText(_ v: Int) -> String {
+    integerFormatter.string(from: NSNumber(value: v)) ?? String(v)
+}
+
+nonisolated func decimalText(_ v: Double, maxFraction: Int = 1) -> String {
+    let f: NumberFormatter
+    switch maxFraction {
+    case 0: f = integerFormatter
+    case 1: f = oneDecimalFormatter
+    default: f = makeNumberFormatter(maxFraction: maxFraction)
+    }
+    return f.string(from: NSNumber(value: v)) ?? String(v)
 }
 
 /// "14 nov 2026"

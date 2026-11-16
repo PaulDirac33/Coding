@@ -101,3 +101,24 @@ struct GlassContainer<Content: View>: View {
         }
     }
 }
+/// Cerchio di vetro la cui tinta passa dall'oro (t = 0) al rosso (t = 1).
+/// SwiftUI anima `t` e rifà il vetro a ogni fotogramma con il colore intermedio.
+struct ProvenanceTintedCircle: ViewModifier, Animatable {
+    var t: Double
+
+    var animatableData: Double {
+        get { t }
+        set { t = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.glassTintedCircle(Palette.provenanceTint(t))
+    }
+}
+
+extension View {
+    /// Tasto tondo di vetro con la tinta fra ricaricate (0) e comprate (1), animabile.
+    func provenanceGlassCircle(_ t: Double) -> some View {
+        modifier(ProvenanceTintedCircle(t: t))
+    }
+}

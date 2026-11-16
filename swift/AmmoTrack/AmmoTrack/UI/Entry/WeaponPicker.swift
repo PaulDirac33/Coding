@@ -60,7 +60,7 @@ struct WeaponPicker: View {
 
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
-    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.50, dampingFraction: 0.48)))
+    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.36, dampingFraction: 0.65)))
     private var drag: CGFloat? = nil
     /// Calibro la cui bolla piccola è premuta in questo momento (nil = nessuna).
     @GestureState private var pressedToggle: String? = nil
@@ -331,8 +331,7 @@ struct WeaponPicker: View {
                 guard toggleHit(g.startLocation) == nil else { return }
                 // Al primo tocco la bolla raggiunge il punto con una molla, poi segue senza ritardo.
                 transaction.animation = (state == nil)
-                    ? Animation.spring(response: 0.30, dampingFraction: 0.62)
-                    : nil
+                ? Animation.spring(response: 0.28, dampingFraction: 0.7)                    : nil
                 state = g.location.y
             }
             .updating($pressedToggle) { g, state, _ in
@@ -349,13 +348,15 @@ struct WeaponPicker: View {
     }
 
     private func finish(at point: CGPoint) {
-        guard let hit = rowFrames.first(where: { $0.value.insetBy(dx: 0, dy: -1).contains(point) })?.key,
-              let t = targets[hit] else { return }      // rilasciato fuori dalle righe: non succede nulla
+        // Sceglie la riga più vicina al punto di rilascio: è quella su cui la bolla si è già fermata,
+        // anche se rilasci fra due righe o su un'intestazione di calibro.
+        guard let hit = rowFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
+              let t = targets[hit] else { return }
 
         let changed = t != target
         if changed {
-            // La bolla rimbalza fino alla nuova riga...
-            withAnimation(.spring(response: 0.50, dampingFraction: 0.55)) { target = t }
+            // La bolla si assesta sulla nuova riga (stessa molla del rilascio)...
+            withAnimation(.spring(response: 0.36, dampingFraction: 0.65)) { target = t }
         }
         // ...e il banner si richiude dopo, più lentamente, così il movimento si vede.
         DispatchQueue.main.asyncAfter(deadline: .now() + (changed ? 0.30 : 0)) {
@@ -384,26 +385,31 @@ struct WeaponPicker: View {
 
         let ordered = rowFrames.sorted { $0.value.midY < $1.value.midY }
         guard let first = ordered.first, let last = ordered.last else { return rest }
-        let cy = min(max(y, first.value.midY), last.value.midY)
+        let p = min(max(y, first.value.midY), last.value.midY)     // il puntatore, fra la prima e l'ultima riga
 
-        // Altezza e larghezza si interpolano fra le due righe sopra e sotto il puntatore.
-        var h = last.value.height
-        var w = restRect(last.key, last.value).width
-        if cy <= first.value.midY {
-            h = first.value.height
-            w = restRect(first.key, first.value).width
-        } else {
-            for i in 1..<ordered.count where cy <= ordered[i].value.midY {
-                let a = ordered[i - 1]
-                let b = ordered[i]
-                let t = (cy - a.value.midY) / (b.value.midY - a.value.midY)
-                h = a.value.height + (b.value.height - a.value.height) * t
-                let wa = restRect(a.key, a.value).width
-                let wb = restRect(b.key, b.value).width
-                w = wa + (wb - wa) * t
-                break
-            }
+        // Partenza: la prima riga. Se il puntatore è più in basso, il ciclo sostituisce i valori.
+        var cy = first.value.midY
+        var h = first.value.height
+        var w = restRect(first.key, first.value).width
+
+        // Fra le due righe sopra e sotto il puntatore la bolla non segue il dito alla pari:
+        // vicino al centro di una riga rallenta (ne viene catturata), a metà strada accelera verso l'altra.
+        // Altezza e larghezza usano lo stesso avanzamento, così la forma resta coerente con la riga.
+        for i in 1..<ordered.count {
+            let a = ordered[i - 1]
+            let b = ordered[i]
+            guard p <= b.value.midY else { continue }
+            let t = (p - a.value.midY) / (b.value.midY - a.value.midY)     // 0 = su a, 1 = su b
+            let smooth = t * t * (3 - 2 * t)
+            let m = t + (smooth - t) * magnet
+            cy = a.value.midY + (b.value.midY - a.value.midY) * m
+            h = a.value.height + (b.value.height - a.value.height) * m
+            let wa = restRect(a.key, a.value).width
+            let wb = restRect(b.key, b.value).width
+            w = wa + (wb - wa) * m
+            break
         }
+
         let height = h + 6                                  // premuta, si ingrandisce un po'
         return CGRect(x: rest.minX - 4, y: cy - height / 2, width: w + 8, height: height)
     }
@@ -414,6 +420,9 @@ struct WeaponPicker: View {
     private let sideRoom: CGFloat = 5
     /// Quanto stringere la bolla per lato rispetto alla riga (0 = larga come la riga).
     private let lensInset: CGFloat = 3
+    /// Quanto la bolla viene attirata dal centro delle righe mentre trascini (0 = segue il dito alla pari).
+    /// Sopra 0,8 si "appiccica" troppo.
+    private let magnet: CGFloat = 0.3
 
     /// I muri della bolla: in alto e in basso i bordi della prima e dell'ultima riga (+2 pt di respiro),
     /// ai lati i bordi delle righe più `sideRoom`.
