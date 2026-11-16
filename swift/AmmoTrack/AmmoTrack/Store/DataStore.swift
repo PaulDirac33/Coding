@@ -232,14 +232,37 @@ final class DataStore: ObservableObject {
     }
 
     /// Aggiunge un movimento in fondo al registro.
+    /// Aggiunge un movimento in fondo al registro.
+    /// Con `allowOverdraw: false` rifiuta gli spari che porterebbero un saldo sotto zero.
     @discardableResult
-    func add(_ m: Movement, trackUndo: Bool = true) -> String? {
+    func add(_ m: Movement, trackUndo: Bool = true, allowOverdraw: Bool = true) -> String? {
         let error = mutateMovements(backup: .dailyIfNeeded) { list in
+            if !allowOverdraw, let problem = overdrawProblem(adding: m, to: list) { return problem }
             list.append(m)
             return nil
         }
         if error == nil && trackUndo { lastAddedID = m.id }
         return error
+    }
+
+    /// Se aggiungere `m` porterebbe sotto zero un saldo che ora non lo è, descrive il problema; altrimenti nil.
+    /// Si basa sul registro in ordine cronologico, quindi vale anche per i giorni passati: uno sparo vecchio
+    /// che farebbe andare in negativo uno sparo successivo viene rifiutato. Le entrate non possono mai farlo.
+    private func overdrawProblem(adding m: Movement, to list: [Movement]) -> String? {
+        guard m.delta < 0 else { return nil }
+        let already = Set(Ledger(movements: list).rows.filter { $0.isOverdrawn }.map { $0.id })
+        let rows = Ledger(movements: list + [m]).rows
+        guard let broken = rows.first(where: { $0.isOverdrawn && !already.contains($0.id) }) else { return nil }
+
+        let name = config.caliberName(m.caliberID)
+        let kind = m.provenance.label.lowercased()
+        if broken.id == m.id {
+            // Il saldo dopo lo sparo è negativo: prima ce n'erano quantità + saldo.
+            let available = max(broken.after.value(m.provenance) + m.quantity, 0)
+            let when = m.hasTime ? "" : " al \(dayText(m.date))"
+            return "Non hai abbastanza \(kind) \(name)\(when): servono \(numText(m.quantity)), ne hai \(numText(available))."
+        }
+        return "Non registrato: il saldo \(kind) \(name) andrebbe sotto zero il \(dayText(broken.movement.date))."
     }
 
     func update(_ m: Movement) -> String? {
