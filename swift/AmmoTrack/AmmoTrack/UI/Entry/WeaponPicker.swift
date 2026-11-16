@@ -57,6 +57,10 @@ struct WeaponPicker: View {
     @AppStorage("picker.collapsedCalibers") private var collapsedRaw = ""
     /// Posizione delle bolle piccole (una per calibro che ha armi), raccolta dalle righe.
     @State private var toggleFrames: [String: CGRect] = [:]
+    /// false = il banner appena aperto mostra le righe senza ScrollView; diventa true a trasformazione finita.
+    @State private var scrollReady = false
+    /// Numero dell'ultima apertura: i timer delle aperture precedenti non fanno più nulla.
+    @State private var scrollToken = SyncToken()
 
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
@@ -136,7 +140,7 @@ struct WeaponPicker: View {
 
     private var pickerButton: some View {
         Button {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { isOpen = true }
+            openPicker()
         } label: {
             if isCaliberOnly {
                 compactLabel
@@ -145,6 +149,18 @@ struct WeaponPicker: View {
             }
         }
         .buttonStyle(.plain)
+    }
+    /// Apre il banner. Prima di aprire azzera lo scorrimento, così il banner nasce già senza ScrollView;
+    /// la ScrollView arriva a trasformazione finita. Ogni apertura invalida i timer delle precedenti.
+    private func openPicker() {
+        scrollReady = false
+        scrollToken.value += 1
+        let ticket = scrollToken.value
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { isOpen = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            guard scrollToken.value == ticket, isOpen else { return }
+            scrollReady = true
+        }
     }
 
     /// Con un'arma: miniatura, nome e calibro/matricola sulla seconda riga. Nessuna larghezza fissa:
@@ -203,19 +219,28 @@ struct WeaponPicker: View {
     private var panel: some View {
         // Spazio per le righe: altezza massima del banner meno i 10 pt di margine sopra e sotto.
         let room = max(120, maxPanelHeight - 20)
-        // Stima con TUTTE le armi visibili: decide se serve lo scorrimento. Così assorbire un calibro
-        // non cambia mai la struttura (ScrollView ↔ vista normale) e le righe non sfarfallano.
+        // Stima con TUTTE le armi visibili (lasciala come l'avevi).
         let full = CGFloat(rowCount) * 50 + CGFloat(store.config.calibers.count) * 24
+        let height = min(room, rowsHeight > 0 ? rowsHeight : full)
+
         return Group {
             if full > room {
-                ScrollView { rows }
-                    .scrollIndicators(.hidden)
-                    .frame(height: min(room, rowsHeight > 0 ? rowsHeight : full))
+                if scrollReady {
+                    ScrollView { rows.padding(.horizontal, 10) }
+                        .scrollIndicators(.never)
+                        .frame(height: height)
+                } else {
+                    rows
+                        .padding(.horizontal, 10)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(height: height, alignment: .top)
+                        .clipped()
+                }
             } else {
-                rows
+                rows.padding(.horizontal, 10)
             }
         }
-        .padding(10)
+        .padding(.vertical, 10)
         .frame(width: panelWidth)
     }
 
