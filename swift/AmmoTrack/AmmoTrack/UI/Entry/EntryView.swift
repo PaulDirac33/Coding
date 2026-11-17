@@ -10,7 +10,7 @@
 // ⌘Z annulla · ⇧⌘Z ripete
 //  Il codice della tastiera e dell'inserimento è in EntryView+Input.swift.
 // ⌘↓ apre il banner armi · ↑ ↓ ↩ lo guidano · ⌘↩ assorbe/espande le armi
-
+// ⌘D apre il calendario della data
 import SwiftUI
 
 // MARK: - Tipi di supporto
@@ -210,6 +210,17 @@ struct EntryView: View {
             .padding(.horizontal, 24)
         }
         .coordinateSpace(.named("entryPage"))
+        .background {
+            // ⌘D apre il calendario della data. Il tasto esiste in tutte e tre le pagine del pager,
+            // quindi lo spengo quando questa non è quella visibile.
+            Button("") { openCalendar() }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(!isActive)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .onAppear {
             addShown = showsAddButton
@@ -244,6 +255,12 @@ struct EntryView: View {
             if !open {
                 syncControls(after: addButtonDelay)        // il banner si è chiuso
                 if isActive { inputFocused = true }        // e si torna a scrivere le cifre
+            }
+        }
+        .onChange(of: showCalendar) { _, open in
+            // Calendario chiuso (Esc, clic fuori, Fine, Oggi): si torna a scrivere le cifre.
+            if !open && isActive {
+                DispatchQueue.main.async { inputFocused = true }
             }
         }
         .onChange(of: storedProvenance) { _, _ in
@@ -457,6 +474,7 @@ struct EntryView: View {
                     showCalendar = false
                     inputFocused = true
                 }
+                .keyboardShortcut(.defaultAction)
                 .glassProminentButton()
             }
         }

@@ -23,6 +23,19 @@ extension EntryView {
             withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { pickerOpen = false }
         }
     }
+    /// ⌘D: apre il calendario della data. Se il banner armi è aperto, lo chiude prima.
+    func openCalendar() {
+        closePicker()
+        showCalendar = true
+    }
+    /// Sposta il giorno scelto nel calendario. Non si va oltre oggi (come il DatePicker, che arriva fino a Date()).
+    /// Arrivando a oggi, `day` torna nil, cioè «Oggi» con l'ora.
+    func moveCalendarDay(_ days: Int) {
+        let current = Cal.startOfDay(day ?? Date())
+        guard let moved = Cal.cal.date(byAdding: .day, value: days, to: current) else { return }
+        let target = min(moved, Cal.startOfDay(Date()))
+        day = Cal.cal.isDateInToday(target) ? nil : target
+    }
     /// Manda un comando da tastiera al banner armi.
     func sendPicker(_ key: PickerKey) {
         pickerCommand = PickerCommand(id: pickerCommand.id + 1, key: key)
@@ -72,7 +85,7 @@ extension EntryView {
     // MARK: Tastiera
 
     func handleKey(_ press: KeyPress) -> KeyPress.Result {
-        guard isActive else { return .ignored }
+        guard isActive, !showCalendar else { return .ignored }
         // Lascio passare le scorciatoie di sistema (⌘C, ⌘Q, ...).
         if press.modifiers.contains(.command) || press.modifiers.contains(.control) { return .ignored }
 
@@ -141,6 +154,21 @@ extension EntryView {
             let mods = event.modifierFlags.intersection([.command, .control, .option])
             let consumed: Bool = MainActor.assumeIsolated {
                 guard gate.active else { return false }
+                // Calendario aperto: ← → un giorno, ↑ ↓ una settimana, ↩ ed Esc chiudono.
+                // Le combinazioni con ⌘/⌥/⌃ (e quindi ⌘↑ ⌘↓ del DatePicker) passano com'erano.
+                if showCalendar {
+                    guard mods.isEmpty else { return false }
+                    switch code {
+                    case 123: moveCalendarDay(-1); return true       // ←
+                    case 124: moveCalendarDay(1); return true        // →
+                    case 126: moveCalendarDay(-7); return true       // ↑ settimana prima
+                    case 125: moveCalendarDay(7); return true        // ↓ settimana dopo
+                    case 36, 76, 53:                                  // ↩, ↩ del tastierino, Esc
+                        if !event.isARepeat { showCalendar = false }
+                        return true
+                    default: return false
+                    }
+                }
                 if NSApp.keyWindow?.firstResponder is NSTextView { return false }
                 if NSApp.keyWindow?.attachedSheet != nil { return false }
 
