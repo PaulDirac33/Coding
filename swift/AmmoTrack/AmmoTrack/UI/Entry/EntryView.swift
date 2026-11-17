@@ -12,6 +12,9 @@
 // ⌘↓ apre il banner armi · ↑ ↓ ↩ lo guidano · ⌘↩ assorbe/espande le armi
 // ⌘D apre il calendario della data
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Tipi di supporto
 /// Larghezza del selettore ricaricate/comprate (2 voci da 124 pt + 2 margini da 3 pt).
@@ -458,28 +461,39 @@ struct EntryView: View {
                 set: { new in day = Cal.cal.isDateInToday(new) ? nil : new })
     }
 
+    /// Il popover prende la larghezza del calendario (niente larghezza fissa) più un piccolo margine.
+    /// I due tasti si dividono quella larghezza, vicini, in vetro a capsula (alone tondo, non squadrato).
     var calendarPopover: some View {
         VStack(spacing: 10) {
             DatePicker("Data", selection: dayBinding, in: ...Date(), displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .labelsHidden()
-            HStack {
-                Button("Oggi") {
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))   // spigoli tondi, e taglia l'anello di focus
+
+            HStack(spacing: 8) {
+                Button {
                     day = nil
                     showCalendar = false
+                } label: {
+                    Text("Oggi").frame(maxWidth: .infinity)
                 }
                 .glassButton()
-                Spacer()
-                Button("Fine") {
+                .buttonBorderShape(.capsule)
+
+                Button {
                     showCalendar = false
                     inputFocused = true
+                } label: {
+                    Text("Fine").frame(maxWidth: .infinity)
                 }
                 .keyboardShortcut(.defaultAction)
                 .glassProminentButton()
+                .buttonBorderShape(.capsule)
             }
+            .focusEffectDisabled()                           // niente anello di focus quadrato sui tasti
         }
-        .padding(14)
-        .frame(width: 290)
+        .padding(12)
+        .fixedSize()
     }
 
     // MARK: Provenienza
