@@ -14,6 +14,11 @@
 import SwiftUI
 
 // MARK: - Tipi di supporto
+/// Larghezza del selettore ricaricate/comprate (2 voci da 124 pt + 2 margini da 3 pt).
+/// La casella di inserimento e il banner armi aperto hanno la stessa larghezza.
+enum EntryLayout {
+    static let controlWidth: CGFloat = 254
+}
 
 /// Che cosa si sta per registrare: il calibro (che è quello dell'arma) e l'arma, se indicata.
 struct EntryTarget: Equatable {
@@ -351,7 +356,7 @@ struct EntryView: View {
             amountDigits
                 .frame(height: 50)
         }
-        .frame(width: 300, height: 92)
+        .frame(width: EntryLayout.controlWidth, height: 92)
         .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .liquidGlass(cornerRadius: 26)
         .overlay(
@@ -467,7 +472,7 @@ struct EntryView: View {
             if look.selector {
                 GlassSegmented(options: Provenance.allCases,
                                selection: provenanceBinding,
-                               segmentWidth: 124,
+                               totalWidth: EntryLayout.controlWidth,
                                walls: .horizontal) { p, selected in
                     HStack(spacing: 7) {
                         Image(systemName: p.symbol)

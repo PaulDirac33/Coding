@@ -41,7 +41,7 @@ struct WeaponPicker: View {
     @Namespace private var ns
 
     private let buttonWidth: CGFloat = 320
-    private let panelWidth: CGFloat = 340
+    private let panelWidth: CGFloat = EntryLayout.controlWidth
     private let compactHeight: CGFloat = 44             // altezza del tasto quando c'è solo il calibro
     private let compactCartridgeLength: CGFloat = 64    // lunghezza della cartuccia orizzontale (in punti)
 
@@ -884,16 +884,10 @@ private struct PickerRow: View {
     @ViewBuilder
     private var textView: some View {
         if isCaliberRow {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
-            }
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
         } else {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
@@ -936,7 +930,7 @@ private struct PickerRow: View {
         HStack(spacing: 10) {
             iconView
             textView
-            Spacer(minLength: 8)
+            Spacer(minLength: toggleID == nil ? 8 : AbsorbBubble.slot)    // lascia posto alla bolla piccola
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
