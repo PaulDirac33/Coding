@@ -293,9 +293,13 @@ struct EntryView: View {
     /// I due tasti stanno nello stesso contenitore di vetro. Con un'arma scelta «Aggiunte» sparisce
     /// e il suo vetro viene assorbito da «Sparate». Spacing del container = spacing dell'HStack:
     /// a riposo non si fondono, si fondono solo quando uno dei due compare o scompare.
+    /// Distanza fra i due tasti (56 pt ciascuno) perché ognuno stia al centro della sua voce del selettore:
+    /// ogni voce è larga (controlWidth − 2 margini da 3 pt) / 2 = 124 pt, quindi 124 pt da centro a centro.
+    var buttonGap: CGFloat { (EntryLayout.controlWidth - 6) / 2 - 56 }
+
     var actionButtons: some View {
-        GlassContainer(spacing: 24) {
-            HStack(spacing: 24) {
+        GlassContainer(spacing: buttonGap) {
+            HStack(spacing: buttonGap) {
                 if addShown {
                     directionButton(.added)
                 }
@@ -303,7 +307,6 @@ struct EntryView: View {
             }
         }
     }
-
     /// Porta «Aggiunte», colore dei tasti e selettore alla scelta corrente, UNO ALLA VOLTA:
     /// prima colore e selettore, poi (a sfumatura finita) il vetro che si fonde o si divide.
     /// Colore e vetro in movimento insieme fanno sfarfallare i tasti e possono far saltare la goccia.

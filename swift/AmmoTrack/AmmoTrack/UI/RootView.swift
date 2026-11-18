@@ -73,8 +73,7 @@ struct RootView: View {
                            selection: $page,
                            segmentWidth: 128) { p, selected in
                 HStack(spacing: 7) {
-                    Image(systemName: p.symbol)
-                        .font(.system(size: 14, weight: .semibold))
+                    pageIcon(p, selected: selected)
                     Text(p.title)
                         .font(.system(size: 13, weight: selected ? .semibold : .medium))
                 }
@@ -86,6 +85,37 @@ struct RootView: View {
         .padding(.bottom, 10)
         .frame(height: 60)
     }
+    /// Icona della pagina nel selettore: la Beretta per Armi, il simbolo di sistema per le altre.
+    /// Altezza comune delle icone del selettore: i simboli di sistema e la Beretta sono alti uguale.
+    let pageIconHeight: CGFloat = 20
+    /// Di quanti punti si alzano le icone del selettore rispetto al centro della voce.
+    let pageIconLift: CGFloat = 2
+
+    /// Icona della pagina nel selettore: la Beretta per Armi, il simbolo di sistema per le altre.
+    @ViewBuilder
+        func pageIcon(_ p: AppPage, selected: Bool) -> some View {
+            if p == .weapons {
+                beretta(selected: selected)
+            } else {
+                Image(systemName: p.symbol)
+                    .font(.system(size: pageIconHeight, weight: .semibold))
+                    .offset(y: -pageIconLift)          // solo i simboli di sistema: la Beretta è già più alta
+            }
+        }
+    /// La Beretta già disegnata (bianca), attenuata come il testo quando la voce non è selezionata.
+       @ViewBuilder
+       private func beretta(selected: Bool) -> some View {
+           let h = pageIconHeight
+           if let bitmap = BerettaBitmap.image(height: h, tint: .white) {
+               Image(decorative: bitmap, scale: 3)
+                   .resizable()
+                   .interpolation(.high)
+                   .frame(width: h * BerettaIcon.aspectRatio, height: h)
+                   .opacity(selected ? 1 : 0.68)
+           } else {
+               BerettaIcon(height: h)                  // ripiego: vettoriale
+           }
+       }
 
     /// Problemi di lettura/scrittura (rosso) o avvisi (arancione): visibili in tutte le pagine.
     @ViewBuilder
