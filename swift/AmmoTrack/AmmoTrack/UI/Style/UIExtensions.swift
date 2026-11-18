@@ -94,7 +94,27 @@ struct LimitBar: View {
 }
 
 // MARK: - Immagini delle armi
+/// Beretta già disegnata, una volta sola per misura: l'icona vera ha decine di sagome con sfocature e maschere,
+/// troppo pesanti da ridisegnare a ogni fotogramma mentre il banner armi si apre.
+@MainActor
+enum BerettaBitmap {
+    private struct Key: Hashable {
+        let height: Int
+        let tint: Color
+    }
+    private static var cache: [Key: CGImage] = [:]
 
+    static func image(height: CGFloat, tint: Color? = nil) -> CGImage? {
+        let tint = tint ?? Palette.muted          // letto qui dentro, dove siamo sul MainActor
+        let key = Key(height: Int((height * 100).rounded()), tint: tint)
+        if let cached = cache[key] { return cached }
+        let renderer = ImageRenderer(content: BerettaIcon(height: height).foregroundStyle(tint))
+        renderer.scale = 3
+        guard let image = renderer.cgImage else { return nil }
+        cache[key] = image
+        return image
+    }
+}
 /// Miniatura dell'arma: il logo (PNG con trasparenza) per intero e centrato.
 /// Senza logo mostra l'emoji della pistola, in grigio, dentro un cerchio.
 struct WeaponThumb: View {
@@ -111,14 +131,56 @@ struct WeaponThumb: View {
                 .scaledToFit()
                 .frame(width: size, height: size)
         } else {
-            ZStack {
-                Text("🔫")
-                    .font(.system(size: size * 0.5))
-                    .grayscale(1)
-                    .opacity(0.8)
+            let h = size / BerettaIcon.aspectRatio
+            if let bitmap = BerettaBitmap.image(height: h) {
+                Image(decorative: bitmap, scale: 3)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+            } else {
+                BerettaIcon(height: h)
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: size, height: size)
             }
-            .frame(width: size, height: size)
         }
+    }
+}
+/// La composizione del segnaposto: la Beretta con il bossolo in piedi a destra dell'impugnatura, sotto il ponticello,
+/// con il fondello sulla stessa linea della base della pistola.
+struct WeaponPlaceholderArt: View {
+    let style: CartridgeStyle
+    let gunHeight: CGFloat
+
+    var body: some View {
+        let gunW = gunHeight * BerettaIcon.aspectRatio
+        ZStack(alignment: .bottomLeading) {
+            BerettaIcon(height: gunHeight)
+            CartridgeIcon(style: style, height: gunHeight * 0.37, restsOnBottom: true)
+                .frame(width: gunW * 0.12)
+                .padding(.leading, gunW * 0.34)        // centro del bossolo a circa il 40% della larghezza
+        }
+        .frame(width: gunW, height: gunHeight)
+    }
+}
+
+/// Il segnaposto già disegnato, una volta sola per tipo di cartuccia (come BerettaBitmap).
+/// Si disegna grande e poi si rimpicciolisce: non va rifatto a ogni misura della scheda.
+@MainActor
+enum WeaponPlaceholderBitmap {
+    static let gunHeight: CGFloat = 200
+    static let scale: CGFloat = 2
+    private static var cache: [CartridgeStyle: CGImage] = [:]
+
+    static func image(style: CartridgeStyle) -> CGImage? {
+        if let cached = cache[style] { return cached }
+        let art = WeaponPlaceholderArt(style: style, gunHeight: gunHeight)
+            .foregroundStyle(Color.white.opacity(0.30))
+        let renderer = ImageRenderer(content: art)
+        renderer.scale = scale
+        guard let image = renderer.cgImage else { return nil }
+        cache[style] = image
+        return image
     }
 }
 
@@ -126,6 +188,7 @@ struct WeaponThumb: View {
 struct WeaponImage: View {
     @EnvironmentObject var store: DataStore
     var weapon: Weapon? = nil
+    var caliberID: String? = nil      // calibro scelto nell'editor (arma non ancora salvata)
     var data: Data? = nil
     var removed = false
     var maxPixel = 900
@@ -136,9 +199,30 @@ struct WeaponImage: View {
         return store.image(for: weapon, maxPixel: maxPixel)
     }
     private var cartridge: CartridgeStyle {
-        store.config.caliber(weapon?.caliberID ?? "")?.cartridgeStyle ?? .pistol
+        store.config.caliber(caliberID ?? weapon?.caliberID ?? "")?.cartridgeStyle ?? .pistol
     }
-
+    /// Segnaposto senza foto: la Beretta con il bossolo in piedi accanto, la scritta sotto.
+    private var placeholder: some View {
+        GeometryReader { geo in
+            let gunH = min(geo.size.height * 0.52, geo.size.width * 0.66 / BerettaIcon.aspectRatio)
+            let gunW = gunH * BerettaIcon.aspectRatio
+            VStack(spacing: gunH * 0.12) {
+                if let art = WeaponPlaceholderBitmap.image(style: cartridge) {
+                    Image(decorative: art, scale: WeaponPlaceholderBitmap.scale)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: gunW, height: gunH)
+                } else {
+                    WeaponPlaceholderArt(style: cartridge, gunHeight: gunH)     // ripiego: vettoriale
+                        .foregroundStyle(Color.white.opacity(0.30))
+                }
+                Text("Nessuna immagine")
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.30))
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -149,12 +233,7 @@ struct WeaponImage: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                VStack(spacing: 6) {
-                    CartridgeIcon(style: cartridge, height: 46)
-                    Text("Nessuna immagine")
-                        .font(.caption)
-                }
-                .foregroundStyle(Color.white.opacity(0.30))
+                placeholder
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))

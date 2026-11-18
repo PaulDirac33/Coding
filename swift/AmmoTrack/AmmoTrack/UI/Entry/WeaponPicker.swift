@@ -14,17 +14,34 @@
 
 import SwiftUI
 
+/// Tasti che EntryView manda al banner armi.
+enum PickerKey: Equatable {
+    case open       // ⌘↓
+    case up         // ↑
+    case down       // ↓
+    case confirm    // ↩
+    case toggle     // ⌘↩
+}
+
+/// Un comando per il banner. `id` aumenta a ogni invio, così lo stesso tasto premuto due volte
+/// è comunque un cambiamento per onChange.
+struct PickerCommand: Equatable {
+    var id = 0
+    var key: PickerKey = .open
+}
+
 struct WeaponPicker: View {
     @EnvironmentObject var store: DataStore
 
     @Binding var target: EntryTarget
     @Binding var isOpen: Bool
     var maxPanelHeight: CGFloat = 360     // la decide EntryView: dal tasto fino al fondo della pagina
+    var command = PickerCommand()         // comandi da tastiera mandati da EntryView
 
     @Namespace private var ns
 
     private let buttonWidth: CGFloat = 320
-    private let panelWidth: CGFloat = 340
+    private let panelWidth: CGFloat = EntryLayout.controlWidth
     private let compactHeight: CGFloat = 44             // altezza del tasto quando c'è solo il calibro
     private let compactCartridgeLength: CGFloat = 64    // lunghezza della cartuccia orizzontale (in punti)
 
@@ -69,7 +86,8 @@ struct WeaponPicker: View {
     @State private var scrollToken = SyncToken()
     /// Posizione in alto delle righe rispetto all'area visibile del banner (cambia quando scorri).
     @State private var contentTop: CGFloat = 0
-
+    /// Voce evidenziata con la tastiera (↑ ↓), nella forma "calibro|arma". nil = la voce già scelta.
+    @State private var highlightKey: String? = nil
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.36, dampingFraction: 0.65)))
@@ -83,11 +101,15 @@ struct WeaponPicker: View {
     }
 
     var body: some View {
-        if WeaponPicker.morphs {
-            morphing
-        } else {
-            classic
+        Group {
+            if WeaponPicker.morphs {
+                morphing
+            } else {
+                classic
+            }
         }
+        .onChange(of: command) { _, c in handle(c) }
+        .onChange(of: isOpen) { _, _ in highlightKey = nil }     // a ogni apertura/chiusura riparte dalla voce scelta
     }
 
     // MARK: Le due versioni
@@ -271,8 +293,15 @@ struct WeaponPicker: View {
             if isLimited {
                 Group {
                     if scrollReady {
-                        ScrollView { rows.padding(.horizontal, 10).padding(.vertical, scrollPad) }
-                            .scrollIndicators(.never)
+                        ScrollViewReader { proxy in
+                            ScrollView { rows.padding(.horizontal, 10).padding(.vertical, scrollPad) }
+                                .scrollIndicators(.never)
+                                .onChange(of: highlightKey) { _, new in
+                                    // Voce fuori vista (o sotto i pallini): la porto al centro.
+                                    guard let new, visibility.hidden.contains(new) else { return }
+                                    withAnimation(Self.absorbAnimation) { proxy.scrollTo(new, anchor: .center) }
+                                }
+                        }
                     } else {
                         rows
                             .padding(.horizontal, 10)
@@ -403,13 +432,81 @@ struct WeaponPicker: View {
                 && $0.value.insetBy(dx: -AbsorbBubble.hitSlop, dy: -AbsorbBubble.hitSlop).contains(p)
         }?.key
     }
+    /// Sceglie una voce: la bolla si assesta, poi il banner si richiude (più lentamente).
+       private func choose(_ t: EntryTarget) {
+           let changed = t != target
+           if changed {
+               withAnimation(.spring(response: 0.36, dampingFraction: 0.65)) { target = t }
+           }
+           DispatchQueue.main.asyncAfter(deadline: .now() + (changed ? 0.30 : 0)) {
+               withAnimation(Self.closeAnimation) { isOpen = false }
+           }
+       }
+
+       // MARK: Tastiera (comandi mandati da EntryView)
+
+       private func handle(_ c: PickerCommand) {
+           switch c.key {
+           case .open:
+               if !isOpen { openPicker() }
+           case .up:
+               moveHighlight(-1)
+           case .down:
+               moveHighlight(1)
+           case .confirm:
+               confirmHighlight()
+           case .toggle:
+               toggleHighlighted()
+           }
+       }
+
+       /// Le voci del banner dall'alto in basso, come le mostra: il calibro, poi le sue armi
+       /// (con le armi assorbite, solo quella scelta).
+       private var orderedKeys: [String] {
+           var keys: [String] = []
+           for cal in store.config.calibers {
+               keys.append(key(EntryTarget(caliberID: cal.id, weaponID: nil)))
+               var shown = store.config.activeWeapons(for: cal.id)
+               if absorbed.contains(cal.id) { shown = shown.filter { $0.id == target.weaponID } }
+               for w in shown {
+                   keys.append(key(EntryTarget(caliberID: cal.id, weaponID: w.id)))
+               }
+           }
+           return keys
+       }
+
+       /// ↑ ↓: sposta la bolla di una voce. Agli estremi si ferma (la bolla sbatte contro il muro).
+       private func moveHighlight(_ delta: Int) {
+           guard isOpen else { return }
+           let keys = orderedKeys
+           guard !keys.isEmpty else { return }
+           let current = keys.firstIndex(of: selectedKey) ?? (delta > 0 ? -1 : keys.count)
+           let next = min(max(current + delta, 0), keys.count - 1)
+           guard keys[next] != selectedKey else { return }
+           withAnimation(.spring(response: 0.36, dampingFraction: 0.72)) { highlightKey = keys[next] }
+       }
+
+       /// ↩: sceglie la voce su cui sta la bolla e chiude il banner.
+       private func confirmHighlight() {
+           guard isOpen, let t = targets[selectedKey] else { return }
+           choose(t)
+       }
+
+       /// ⌘↩: se la bolla sta su un calibro che ha armi, assorbe o espande le sue armi (come la bolla piccola).
+       private func toggleHighlighted() {
+           guard isOpen, selectedKey.hasSuffix("|") else { return }      // le righe dei calibri finiscono con "|"
+           let id = String(selectedKey.dropLast())
+           guard !store.config.activeWeapons(for: id).isEmpty else { return }
+           toggleAbsorbed(id)
+       }
     // MARK: Bolla e selezione
 
     private func key(_ t: EntryTarget) -> String {
         "\(t.caliberID)|\(t.weaponID ?? "")"
     }
 
-    private var selectedKey: String { key(target) }
+    /// La voce su cui sta la bolla: quella evidenziata con la tastiera, altrimenti quella scelta.
+    private var selectedKey: String { highlightKey ?? key(target) }
 
     /// Tutte le scelte possibili, per chiave.
     private var targets: [String: EntryTarget] {
@@ -450,21 +547,12 @@ struct WeaponPicker: View {
     }
 
     private func finish(at point: CGPoint) {
-        // Sceglie la riga più vicina al punto di rilascio: è quella su cui la bolla si è già fermata,
-        // anche se rilasci fra due righe o su un'intestazione di calibro.
-        guard let hit = selectableFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
-              let t = targets[hit] else { return }
-
-        let changed = t != target
-        if changed {
-            // La bolla si assesta sulla nuova riga (stessa molla del rilascio)...
-            withAnimation(.spring(response: 0.36, dampingFraction: 0.65)) { target = t }
+            // Sceglie la riga più vicina al punto di rilascio: è quella su cui la bolla si è già fermata,
+            // anche se rilasci fra due righe o su un'intestazione di calibro.
+            guard let hit = selectableFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
+                  let t = targets[hit] else { return }
+            choose(t)
         }
-        // ...e il banner si richiude dopo, più lentamente, così il movimento si vede.
-        DispatchQueue.main.asyncAfter(deadline: .now() + (changed ? 0.30 : 0)) {
-            withAnimation(Self.closeAnimation) { isOpen = false }
-        }
-    }
 
     /// Chiavi delle righe dei calibri che hanno la bolla piccola.
     private var shortKeys: Set<String> {
@@ -796,16 +884,10 @@ private struct PickerRow: View {
     @ViewBuilder
     private var textView: some View {
         if isCaliberRow {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
-            }
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
         } else {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
@@ -848,7 +930,7 @@ private struct PickerRow: View {
         HStack(spacing: 10) {
             iconView
             textView
-            Spacer(minLength: 8)
+            Spacer(minLength: toggleID == nil ? 8 : AbsorbBubble.slot)    // lascia posto alla bolla piccola
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -862,5 +944,6 @@ private struct PickerRow: View {
         .overlay(alignment: .trailing) { absorbBubble }
         .opacity(faded ? 0 : 1)
         .animation(.easeOut(duration: 0.15), value: faded)
+        .id(rowKey)
     }
 }

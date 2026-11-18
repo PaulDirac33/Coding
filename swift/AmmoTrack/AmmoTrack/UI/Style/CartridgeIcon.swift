@@ -2,14 +2,23 @@
 //  CartridgeIcon.swift
 //
 //  Le cartucce dell'app (tasto dell'arma, miniature, schede senza foto), disegnate in scala reale:
-//  stessa grafica di prima (palla a tinta piena, bossolo al 62%, colore preso da foregroundStyle),
-//  ma con le quote vere delle due cartucce e qualche particolare in più.
+//  palla a tinta piena, bossolo al 62%, colore preso da foregroundStyle.
 //
-//  QUOTE (mm), massimi C.I.P. riportati da Wikipedia e dai cataloghi:
-//    9x21 IMI   palla 9,03 · collo 9,63 · base 9,93 · orlo 9,96 × 1,27 · bossolo 21,15 · totale 29,75
-//    .22 LR     palla 5,7  · corpo 5,7 (5,74) · orlo 7,1 × 1,1 · bossolo 15,6 · totale 25,4
-//  Sono stime (non vengono dalle tabelle C.I.P.): la gola dell'estrattore, gli smussi, il profilo
-//  dell'ogiva e le scanalature della palla del .22. Si regolano nelle due costanti `CartridgeSpec` qui sotto.
+//  QUOTE (mm)
+//    9x21 IMI, massimi C.I.P. (TAB. IV): totale 29,75 · bossolo 21,15 · palla 9,03 · collo 9,63 · base 9,93 · orlo 9,96 × 1,27
+//               gola dell'estrattore: la rampa finisce a 2,98 dal fondello (E), fondo Ø 8,79 (E1),
+//               parte piana almeno 0,90 (e), rampa a 35° rispetto all'asse (δ), smusso del fondello 0,30 a 45° (f, β)
+//    .22 LR     misure del disegno originale, lasciate invariate: totale 25,4 · bossolo 15,6 · palla 5,7 · orlo 7,1 × 1,1
+//               (a pochi centesimi di millimetro dai massimi C.I.P., TAB. V: bossolo 15,57 · palla 5,72 · orlo 7,06 × 1,09)
+//
+//  La gola del 9x21 è ricavata da E, E1 e δ: profondità (9,93 − 8,79) / 2 = 0,57, rampa lunga 0,57 / tan 35° = 0,81,
+//  quindi la parte piana viene 2,98 − 1,27 − 0,81 = 0,90, cioè proprio la quota "e" della tabella.
+//
+//  NON vengono da C.I.P. (scelte di disegno, si regolano nelle due costanti `CartridgeSpec` qui sotto):
+//    la forma della palla (ogiva e punta: quella del disegno originale), le scanalature della palla del .22,
+//    gli smussi del fondello del .22, il piccolo smusso sullo spigolo dell'orlo e la riga fra palla e bossolo.
+//  Attenzione: nella tabella del .22 la quota G = 1,94 (e r = 0,25) è della CAMERA, non della palla,
+//  quindi non dice dove finisce il tratto cilindrico.
 //
 //  Le due cartucce hanno la stessa scala: il 9x21 riempie esattamente `height`, il .22 LR resta più
 //  corto e più stretto in proporzione, come nella realtà.
@@ -41,38 +50,55 @@ extension Caliber {
 /// Tutte le misure in millimetri. Le quote verticali (y) si contano dalla punta della palla verso il fondello.
 fileprivate struct CartridgeSpec {
     // Quote C.I.P.
-    let overall: CGFloat          // lunghezza totale della cartuccia
-    let caseLength: CGFloat       // lunghezza del bossolo
-    let rimDiameter: CGFloat      // diametro dell'orlo
-    let rimThickness: CGFloat     // spessore dell'orlo
-    let baseDiameter: CGFloat     // diametro del bossolo vicino al fondello
-    let neckDiameter: CGFloat     // diametro del bossolo alla bocca
-    let bulletDiameter: CGFloat   // diametro della palla
+    let overall: CGFloat              // L6: lunghezza totale della cartuccia
+    let caseLength: CGFloat           // L3: lunghezza del bossolo
+    let rimDiameter: CGFloat          // R1: diametro dell'orlo / fondello
+    let rimThickness: CGFloat         // R: spessore dell'orlo / fondello
+    let baseDiameter: CGFloat         // P1: diametro del bossolo vicino al fondello
+    let neckDiameter: CGFloat         // diametro del bossolo alla bocca
+    let bulletDiameter: CGFloat       // G1: diametro della palla
 
-    // Forma della palla (stime)
-    let noseLength: CGFloat       // dalla punta fin dove l'ogiva diventa cilindro
-    let tipRadius: CGFloat        // arrotondamento della punta
+    // Gola dell'estrattore (C.I.P. E, E1, δ). extractorEnd = 0: la gola non c'è (percussione anulare).
+    let extractorEnd: CGFloat         // E: dal piano del fondello a dove la rampa torna al diametro del corpo
+    let grooveFloorDiameter: CGFloat  // E1: diametro sul fondo della gola
+    let grooveRampAngle: CGFloat      // δ: angolo della rampa rispetto all'asse, in gradi
+    let baseChamfer: CGFloat          // f: smusso del fondello (a 45°)
 
-    // Particolari (stime)
-    let grooveWidth: CGFloat      // gola dell'estrattore: larghezza (0 = non c'è)
-    let grooveDepth: CGFloat      // gola dell'estrattore: profondità per lato
-    let baseChamfer: CGFloat      // smusso del fondello
-    let lubeGrooves: [CGFloat]    // quota (y) delle scanalature della palla
+    // Forma della palla (scelte di disegno: C.I.P. non la prescrive)
+    let noseLength: CGFloat           // dalla punta fin dove l'ogiva diventa cilindro
+    let tipRadius: CGFloat            // arrotondamento della punta
+    let lubeGrooves: [CGFloat]        // quota (y) delle scanalature della palla
 
     /// Dove comincia il bossolo (la bocca).
     var mouthY: CGFloat { overall - caseLength }
+    /// Dove comincia la faccia superiore dell'orlo.
+    var flangeTopY: CGFloat { overall - rimThickness }
+
+    // Gola dell'estrattore
+    var hasExtractorGroove: Bool { extractorEnd > 0 }
+    /// Fine della rampa dal lato del corpo (quota E dal fondello).
+    var rampEndY: CGFloat { overall - extractorEnd }
+    /// Profondità della gola per lato, rispetto al corpo.
+    var grooveDepth: CGFloat { (baseDiameter - grooveFloorDiameter) / 2 }
+    /// Lunghezza assiale della rampa: profondità / tan δ.
+    var rampLength: CGFloat {
+        guard grooveRampAngle > 0 else { return 0 }
+        return grooveDepth / tan(grooveRampAngle * .pi / 180)
+    }
+    /// Dove la rampa incontra la parte piana sul fondo della gola.
+    var rampStartY: CGFloat { rampEndY + rampLength }
 
     static let nineByTwentyOne = CartridgeSpec(
         overall: 29.75, caseLength: 21.15, rimDiameter: 9.96, rimThickness: 1.27,
         baseDiameter: 9.93, neckDiameter: 9.63, bulletDiameter: 9.03,
-        noseLength: 6.0, tipRadius: 1.8,
-        grooveWidth: 0.80, grooveDepth: 0.42, baseChamfer: 0.30, lubeGrooves: [])
+        extractorEnd: 2.98, grooveFloorDiameter: 8.79, grooveRampAngle: 35, baseChamfer: 0.30,
+        noseLength: 6.0, tipRadius: 1.8, lubeGrooves: [])
 
     static let twentyTwoLR = CartridgeSpec(
         overall: 25.4, caseLength: 15.6, rimDiameter: 7.1, rimThickness: 1.1,
         baseDiameter: 5.74, neckDiameter: 5.74, bulletDiameter: 5.70,
-        noseLength: 4.9, tipRadius: 1.25,
-        grooveWidth: 0, grooveDepth: 0, baseChamfer: 0.15, lubeGrooves: [6.1, 7.6])
+        extractorEnd: 0, grooveFloorDiameter: 0, grooveRampAngle: 0, baseChamfer: 0.15,
+        noseLength: 4.9, tipRadius: 1.25, lubeGrooves: [6.1, 7.6])
 }
 
 // MARK: - Geometria
@@ -120,7 +146,7 @@ fileprivate func symmetricPath(_ half: [CGPoint], map: (CGPoint) -> CGPoint) -> 
 }
 
 /// Fascia verticale (mm) con il raggio del pezzo che attraversa: serve a far cadere luce e ombra
-/// sul diametro giusto (l'orlo del .22 è più largo del suo bossolo).
+/// sul diametro giusto (l'orlo è più largo del fondo della gola).
 fileprivate struct LightBand {
     let y0: CGFloat
     let y1: CGFloat
@@ -143,10 +169,14 @@ struct CartridgeIcon: View {
     /// true = cartuccia coricata: ruotata di 90° in senso antiorario (punta a sinistra).
     /// L'ingombro diventa `height` in larghezza e lo spessore della cartuccia in altezza.
     var horizontal = false
-
-    /// Spazio (mm) fra la bocca del bossolo e la palla: è la sottile riga che le separa, come nel disegno di prima.
-    /// Mettilo a 0 per la palla incastrata nel bossolo senza stacco.
+    /// true = il fondello poggia sul bordo basso dell'ingombro; false = la cartuccia è centrata in verticale
+    /// (il .22, più corto del 9x21, ha allora la base più in alto).
+    var restsOnBottom = false
+    /// Spazio (mm) fra la bocca del bossolo e la palla: è la sottile riga che le separa.
+    /// Si toglie dal tratto cilindrico della palla. Mettilo a 0 per la palla incastrata nel bossolo senza stacco.
     private static let mouthGap: CGFloat = 0.35
+    /// Piccolo smusso (mm) sullo spigolo superiore dell'orlo. Non è una quota C.I.P.: 0 = spigolo vivo.
+    private static let rimEdgeBreak: CGFloat = 0.08
 
     // MARK: Scala
 
@@ -156,7 +186,11 @@ struct CartridgeIcon: View {
     private var unit: CGFloat { height / CartridgeSpec.nineByTwentyOne.overall }
     private var width: CGFloat { spec.rimDiameter * unit }
     /// Margine in alto: il .22, più corto, resta centrato in verticale.
-    private var top: CGFloat { (height - spec.overall * unit) / 2 }
+    /// Margine in alto: il .22, più corto, resta centrato in verticale (o poggiato in basso con `restsOnBottom`).
+    private var top: CGFloat {
+        let free = height - spec.overall * unit
+        return restsOnBottom ? free : free / 2
+    }
 
     /// Da millimetri (x dall'asse, y dalla punta) a punti nella vista.
     private func pt(_ p: CGPoint) -> CGPoint {
@@ -174,28 +208,29 @@ struct CartridgeIcon: View {
         return symmetricPath(half, map: { pt($0) })
     }
 
+    /// Il bossolo, dalla bocca al fondello. Con la gola dell'estrattore (9x21) il profilo è:
+    /// corpo conico → rampa a δ → fondo piano della gola → faccia dell'orlo → orlo → smusso del fondello.
     private var casePath: Path {
         let s = spec
         let base = s.baseDiameter / 2
         let neck = s.neckDiameter / 2
         let rim = s.rimDiameter / 2
         let bottom = s.overall
-        let flangeTop = bottom - s.rimThickness
+        let flangeTop = s.flangeTopY
         let chamfer = s.baseChamfer
+        let edge = Self.rimEdgeBreak
 
-        // Dalla bocca verso il fondello (il bossolo del 9x21 è appena conico: 9,63 → 9,93).
         var half: [CGPoint] = [CGPoint(x: neck, y: s.mouthY)]
-        if s.grooveWidth > 0 {
-            let grooveTop = flangeTop - s.grooveWidth
-            let grooveRadius = base - s.grooveDepth
-            half.append(CGPoint(x: base, y: grooveTop))
-            half.append(CGPoint(x: grooveRadius, y: grooveTop + 0.22))
-            half.append(CGPoint(x: grooveRadius, y: flangeTop - 0.02))
+        if s.hasExtractorGroove {
+            let floor = s.grooveFloorDiameter / 2
+            half.append(CGPoint(x: base, y: s.rampEndY))          // fine del corpo conico (E)
+            half.append(CGPoint(x: floor, y: s.rampStartY))       // rampa fino al fondo della gola (E1, δ)
+            half.append(CGPoint(x: floor, y: flangeTop))          // parte piana (e), poi la faccia dell'orlo
         } else {
             half.append(CGPoint(x: base, y: flangeTop))
         }
-        half.append(CGPoint(x: rim - 0.08, y: flangeTop))
-        half.append(CGPoint(x: rim, y: flangeTop + 0.08))
+        half.append(CGPoint(x: rim - edge, y: flangeTop))
+        half.append(CGPoint(x: rim, y: flangeTop + edge))
         half.append(CGPoint(x: rim, y: bottom - chamfer))
         half.append(CGPoint(x: rim - chamfer, y: bottom))
         return symmetricPath(half, map: { pt($0) })
@@ -209,12 +244,17 @@ struct CartridgeIcon: View {
 
     private var caseLights: [LightBand] {
         let s = spec
-        let flangeTop = s.overall - s.rimThickness
-        if s.grooveWidth > 0 {
-            return [LightBand(y0: s.mouthY, y1: s.overall, radius: s.rimDiameter / 2)]
+        if s.hasExtractorGroove {
+            return [
+                LightBand(y0: s.mouthY, y1: s.rampEndY, radius: s.baseDiameter / 2),                              // corpo
+                LightBand(y0: s.rampEndY, y1: s.rampStartY,
+                          radius: (s.baseDiameter + s.grooveFloorDiameter) / 4),                                  // rampa: raggio medio
+                LightBand(y0: s.rampStartY, y1: s.flangeTopY, radius: s.grooveFloorDiameter / 2),                 // fondo della gola
+                LightBand(y0: s.flangeTopY, y1: s.overall, radius: s.rimDiameter / 2)                             // orlo
+            ]
         }
-        return [LightBand(y0: s.mouthY, y1: flangeTop, radius: s.baseDiameter / 2),
-                LightBand(y0: flangeTop, y1: s.overall, radius: s.rimDiameter / 2)]
+        return [LightBand(y0: s.mouthY, y1: s.flangeTopY, radius: s.baseDiameter / 2),
+                LightBand(y0: s.flangeTopY, y1: s.overall, radius: s.rimDiameter / 2)]
     }
 
     /// Le scanalature della palla di piombo (.22 LR).
@@ -224,13 +264,13 @@ struct CartridgeIcon: View {
 
     private var caseMarks: [DarkMark] {
         let s = spec
-        let flangeTop = s.overall - s.rimThickness
         // Piccola ombra subito sotto la bocca, dove la palla entra nel bossolo.
         var marks = [DarkMark(y0: s.mouthY, y1: s.mouthY + 0.6, darkness: 0.30)]
-        if s.grooveWidth > 0 {
-            marks.append(DarkMark(y0: flangeTop - s.grooveWidth, y1: flangeTop, darkness: 0.38))   // gola dell'estrattore
+        if s.hasExtractorGroove {
+            marks.append(DarkMark(y0: s.rampEndY, y1: s.rampStartY, darkness: 0.16))      // rampa della gola
+            marks.append(DarkMark(y0: s.rampStartY, y1: s.flangeTopY, darkness: 0.38))    // fondo della gola
         } else {
-            marks.append(DarkMark(y0: flangeTop - 0.3, y1: flangeTop, darkness: 0.25))             // sopra l'orlo
+            marks.append(DarkMark(y0: s.flangeTopY - 0.3, y1: s.flangeTopY, darkness: 0.25))   // sopra l'orlo
         }
         return marks
     }
@@ -294,7 +334,7 @@ struct CartridgeIcon: View {
     }
 }
 
-// MARK: - Anteprima (per controllare il disegno a varie dimensioni)
+// MARK: - Anteprime (per controllare il disegno a varie dimensioni)
 
 #Preview("Cartucce") {
     HStack(alignment: .center, spacing: 36) {
@@ -308,4 +348,14 @@ struct CartridgeIcon: View {
     .foregroundStyle(Palette.muted)
     .padding(40)
     .background(Color(white: 0.06))
+}
+
+/// Il fondello a grande scala: serve a controllare la gola dell'estrattore del 9x21.
+#Preview("Fondello 9x21") {
+    CartridgeIcon(style: .pistol, height: 900)
+        .frame(height: 260, alignment: .bottom)
+        .clipped()
+        .foregroundStyle(Palette.muted)
+        .padding(40)
+        .background(Color(white: 0.06))
 }

@@ -7,13 +7,21 @@
 //
 //  Tastiera:  cifre   scrivono il numero        ↓  registra "aggiunte"     ↑  registra "sparate"
 //             ← →     ricaricate / comprate     ⌫  cancella l'ultima cifra   Esc  svuota (o chiude il selettore)
-//
+// ⌘Z annulla · ⇧⌘Z ripete
 //  Il codice della tastiera e dell'inserimento è in EntryView+Input.swift.
-//
-
+// ⌘↓ apre il banner armi · ↑ ↓ ↩ lo guidano · ⌘↩ assorbe/espande le armi
+// ⌘D apre il calendario della data
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Tipi di supporto
+/// Larghezza del selettore ricaricate/comprate (2 voci da 124 pt + 2 margini da 3 pt).
+/// La casella di inserimento e il banner armi aperto hanno la stessa larghezza.
+enum EntryLayout {
+    static let controlWidth: CGFloat = 254
+}
 
 /// Che cosa si sta per registrare: il calibro (che è quello dell'arma) e l'arma, se indicata.
 struct EntryTarget: Equatable {
@@ -79,6 +87,7 @@ struct EntryView: View {
     @State var day: Date? = nil              // nil = oggi
     @State var showCalendar = false
     @State var pickerOpen = false
+    @State var pickerCommand = PickerCommand()   // ultimo comando da tastiera mandato al banner armi
     @State var statusText = ""
     @State var statusKind: EntryStatus = .none
     @State var flash = false
@@ -204,6 +213,17 @@ struct EntryView: View {
             .padding(.horizontal, 24)
         }
         .coordinateSpace(.named("entryPage"))
+        .background {
+            // ⌘D apre il calendario della data. Il tasto esiste in tutte e tre le pagine del pager,
+            // quindi lo spengo quando questa non è quella visibile.
+            Button("") { openCalendar() }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(!isActive)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .onAppear {
             addShown = showsAddButton
@@ -235,7 +255,16 @@ struct EntryView: View {
             if !pickerOpen { syncControls() }                       // cambio a banner chiuso (es. arma archiviata)
         }
         .onChange(of: pickerOpen) { _, open in
-            if !open { syncControls(after: addButtonDelay) }        // il banner si è chiuso
+            if !open {
+                syncControls(after: addButtonDelay)        // il banner si è chiuso
+                if isActive { inputFocused = true }        // e si torna a scrivere le cifre
+            }
+        }
+        .onChange(of: showCalendar) { _, open in
+            // Calendario chiuso (Esc, clic fuori, Fine, Oggi): si torna a scrivere le cifre.
+            if !open && isActive {
+                DispatchQueue.main.async { inputFocused = true }
+            }
         }
         .onChange(of: storedProvenance) { _, _ in
             syncLook()                                              // selettore mosso: il colore segue subito, anche a banner aperto
@@ -253,7 +282,8 @@ struct EntryView: View {
             .frame(width: 320, height: 52)
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("entryPage")).minY } action: { slotTop = $0 }
             .overlay(alignment: .top) {
-                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, maxPanelHeight: pickerRoom)
+                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, maxPanelHeight: pickerRoom,
+                             command: pickerCommand)
             }
             .zIndex(10)
     }
@@ -263,9 +293,13 @@ struct EntryView: View {
     /// I due tasti stanno nello stesso contenitore di vetro. Con un'arma scelta «Aggiunte» sparisce
     /// e il suo vetro viene assorbito da «Sparate». Spacing del container = spacing dell'HStack:
     /// a riposo non si fondono, si fondono solo quando uno dei due compare o scompare.
+    /// Distanza fra i due tasti (56 pt ciascuno) perché ognuno stia al centro della sua voce del selettore:
+    /// ogni voce è larga (controlWidth − 2 margini da 3 pt) / 2 = 124 pt, quindi 124 pt da centro a centro.
+    var buttonGap: CGFloat { (EntryLayout.controlWidth - 6) / 2 - 56 }
+
     var actionButtons: some View {
-        GlassContainer(spacing: 24) {
-            HStack(spacing: 24) {
+        GlassContainer(spacing: buttonGap) {
+            HStack(spacing: buttonGap) {
                 if addShown {
                     directionButton(.added)
                 }
@@ -273,7 +307,6 @@ struct EntryView: View {
             }
         }
     }
-
     /// Porta «Aggiunte», colore dei tasti e selettore alla scelta corrente, UNO ALLA VOLTA:
     /// prima colore e selettore, poi (a sfumatura finita) il vetro che si fonde o si divide.
     /// Colore e vetro in movimento insieme fanno sfarfallare i tasti e possono far saltare la goccia.
@@ -346,7 +379,7 @@ struct EntryView: View {
             amountDigits
                 .frame(height: 50)
         }
-        .frame(width: 300, height: 92)
+        .frame(width: EntryLayout.controlWidth, height: 92)
         .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .liquidGlass(cornerRadius: 26)
         .overlay(
@@ -431,27 +464,39 @@ struct EntryView: View {
                 set: { new in day = Cal.cal.isDateInToday(new) ? nil : new })
     }
 
+    /// Il popover prende la larghezza del calendario (niente larghezza fissa) più un piccolo margine.
+    /// I due tasti si dividono quella larghezza, vicini, in vetro a capsula (alone tondo, non squadrato).
     var calendarPopover: some View {
         VStack(spacing: 10) {
             DatePicker("Data", selection: dayBinding, in: ...Date(), displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .labelsHidden()
-            HStack {
-                Button("Oggi") {
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))   // spigoli tondi, e taglia l'anello di focus
+
+            HStack(spacing: 8) {
+                Button {
                     day = nil
                     showCalendar = false
+                } label: {
+                    Text("Oggi").frame(maxWidth: .infinity)
                 }
                 .glassButton()
-                Spacer()
-                Button("Fine") {
+                .buttonBorderShape(.capsule)
+
+                Button {
                     showCalendar = false
                     inputFocused = true
+                } label: {
+                    Text("Fine").frame(maxWidth: .infinity)
                 }
+                .keyboardShortcut(.defaultAction)
                 .glassProminentButton()
+                .buttonBorderShape(.capsule)
             }
+            .focusEffectDisabled()                           // niente anello di focus quadrato sui tasti
         }
-        .padding(14)
-        .frame(width: 290)
+        .padding(12)
+        .fixedSize()
     }
 
     // MARK: Provenienza
@@ -462,7 +507,7 @@ struct EntryView: View {
             if look.selector {
                 GlassSegmented(options: Provenance.allCases,
                                selection: provenanceBinding,
-                               segmentWidth: 124,
+                               totalWidth: EntryLayout.controlWidth,
                                walls: .horizontal) { p, selected in
                     HStack(spacing: 7) {
                         Image(systemName: p.symbol)
@@ -490,12 +535,7 @@ struct EntryView: View {
     }
 
     // MARK: Stato e ultimo evento
-
-    var canUndo: Bool {
-        guard let id = store.lastAddedID else { return false }
-        return store.movements.contains { $0.id == id }
-    }
-
+    
     /// L'ultimo movimento presente nel file (anche se aggiunto da fuori o in una sessione precedente).
     var lastEventText: String? {
         guard let m = store.movements.last else { return nil }
@@ -517,19 +557,8 @@ struct EntryView: View {
     }
 
     var statusRow: some View {
-        HStack(spacing: 10) {
-            statusLine
-            if canUndo {
-                Button {
-                    undo()
-                } label: {
-                    Label("Annulla", systemImage: "arrow.uturn.backward")
-                }
-                .controlSize(.small)
-                .glassButton()
-            }
-        }
-        .frame(height: 30)
+        statusLine
+            .frame(height: 30)
     }
 
     /// Priorità: errore o avviso di questa pagina, poi problemi di lettura del file (rosso), poi l'ultimo evento.

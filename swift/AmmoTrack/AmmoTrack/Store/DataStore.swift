@@ -30,8 +30,10 @@ final class DataStore: ObservableObject {
     @Published private(set) var message: String? = nil
     /// Avviso non bloccante (es. righe del CSV ignorate).
     @Published private(set) var notice: String? = nil
-    /// Id dell'ultimo movimento inserito in questa sessione: serve al pulsante "Annulla".
-    @Published private(set) var lastAddedID: String? = nil
+    /// Nome dell'azione che ⌘Z annullerebbe (es. "Sparo 50"); nil = niente da annullare.
+    @Published private(set) var undoName: String? = nil
+    /// Nome dell'azione che ⇧⌘Z ripristinerebbe; nil = niente da ripetere.
+    @Published private(set) var redoName: String? = nil
 
     // MARK: Stato interno
 
@@ -45,6 +47,9 @@ final class DataStore: ObservableObject {
     private var configProblem: String? = nil
     private var movementsProblem: String? = nil
     private var imageCache: [String: CGImage] = [:]
+    private var undoStack: [UndoStep] = []
+    private var redoStack: [UndoStep] = []
+    private let undoLimit = 100
 
     init() {}
 
@@ -68,7 +73,7 @@ final class DataStore: ObservableObject {
         FolderAccess.remember(url)
         started = true
         imageCache.removeAll()
-        lastAddedID = nil
+        clearUndo()          // le pile si riferiscono alla cartella vecchia
         open(url)
     }
 
@@ -181,7 +186,7 @@ final class DataStore: ObservableObject {
         let known = Set(config.calibers.map { $0.id })
         let unknown = Set(movements.map { $0.caliberID }).subtracting(known)
         guard !unknown.isEmpty, configWritable else { return }
-        _ = mutateConfig { cfg in
+        _ = mutateConfig(undoName: nil) { cfg in
             for id in unknown.sorted() {
                 cfg.calibers.append(Caliber(id: id, name: id, limit: nil, allowsReload: true))
             }
@@ -193,7 +198,8 @@ final class DataStore: ObservableObject {
 
     /// Rilegge il CSV da disco, applica `change`, lo riscrive in modo atomico (con copia di sicurezza).
     /// Restituisce un messaggio d'errore, oppure nil se è andato tutto bene.
-    private func mutateMovements(backup: BackupMode, _ change: (inout [Movement]) -> String?) -> String? {
+    private func mutateMovements(backup: BackupMode, undoName: String?,
+                                 _ change: (inout [Movement]) -> String?) -> String? {
         guard let f = files else { return "Cartella dei dati non disponibile." }
         guard movementsWritable else {
             return "movimenti.csv non è leggibile: non lo modifico per non perdere dati."
@@ -216,6 +222,8 @@ final class DataStore: ObservableObject {
             return "Il file dei movimenti risulta vuoto mentre l'app ha dei dati: non lo sovrascrivo. Aspetta la sincronizzazione o riavvia l'app."
         }
 
+        let before = current                                            // NUOVO
+
         if let error = change(&current) { return error }
 
         // Se c'erano righe illeggibili (che nella riscrittura andrebbero perse) la copia è sempre obbligatoria.
@@ -228,21 +236,25 @@ final class DataStore: ObservableObject {
         apply(movements: current)
         movementsStamp = f.stamp(of: f.movementsURL)
         registerUnknownCalibers()
+
+        // NUOVO: ricordo cosa è cambiato, per ⌘Z
+        if let name = undoName {
+            let diff = MovementDiff(from: before, to: current)
+            if !diff.isEmpty { record(name, .movements(diff)) }
+        }
         return nil
     }
 
     /// Aggiunge un movimento in fondo al registro.
-    /// Aggiunge un movimento in fondo al registro.
     /// Con `allowOverdraw: false` rifiuta gli spari che porterebbero un saldo sotto zero.
     @discardableResult
-    func add(_ m: Movement, trackUndo: Bool = true, allowOverdraw: Bool = true) -> String? {
-        let error = mutateMovements(backup: .dailyIfNeeded) { list in
+    func add(_ m: Movement, allowOverdraw: Bool = true) -> String? {
+        mutateMovements(backup: .dailyIfNeeded,
+                        undoName: "\(m.title) \(numText(m.quantity))") { list in
             if !allowOverdraw, let problem = overdrawProblem(adding: m, to: list) { return problem }
             list.append(m)
             return nil
         }
-        if error == nil && trackUndo { lastAddedID = m.id }
-        return error
     }
 
     /// Se aggiungere `m` porterebbe sotto zero un saldo che ora non lo è, descrive il problema; altrimenti nil.
@@ -266,7 +278,7 @@ final class DataStore: ObservableObject {
     }
 
     func update(_ m: Movement) -> String? {
-        mutateMovements(backup: .always) { list in
+        mutateMovements(backup: .always, undoName: "Modifica movimento") { list in
             guard let i = list.firstIndex(where: { $0.id == m.id }) else { return "Il movimento non esiste più." }
             list[i] = m
             return nil
@@ -274,26 +286,18 @@ final class DataStore: ObservableObject {
     }
 
     func delete(ids: Set<String>) -> String? {
-        let error = mutateMovements(backup: .always) { list in
+        let name = ids.count == 1 ? "Eliminazione movimento" : "Eliminazione di \(ids.count) movimenti"
+        return mutateMovements(backup: .always, undoName: name) { list in
             list.removeAll { ids.contains($0.id) }
             return nil
         }
-        if error == nil, let last = lastAddedID, ids.contains(last) { lastAddedID = nil }
-        return error
-    }
-
-    /// Annulla l'ultimo movimento inserito in questa sessione.
-    func undoLastAdded() -> String? {
-        guard let id = lastAddedID else { return nil }
-        let error = delete(ids: [id])
-        if error == nil { lastAddedID = nil }
-        return error
     }
 
     /// Importa dei movimenti (es. dal foglio Numbers). Se `replacingPrefix` è indicato, prima toglie i movimenti
     /// con quel prefisso di id (una precedente importazione dello stesso foglio): non si duplica nulla.
     func importMovements(_ list: [Movement], replacingPrefix: String?) -> String? {
-        mutateMovements(backup: .always) { current in
+        mutateMovements(backup: .always,
+                        undoName: "Importazione di \(numText(list.count)) movimenti") { current in
             if let prefix = replacingPrefix {
                 current.removeAll { $0.id.hasPrefix(prefix) }
             }
@@ -303,10 +307,78 @@ final class DataStore: ObservableObject {
         }
     }
 
+    // MARK: Annulla / Ripeti (⌘Z, ⇧⌘Z)
+
+    /// Annulla l'ultima azione. Restituisce un messaggio d'errore, oppure nil.
+    @discardableResult
+    func undo() -> String? {
+        guard let step = undoStack.last else { return nil }
+        if let error = replay(step, reversed: true) {
+            notice = error
+            return error
+        }
+        undoStack.removeLast()
+        redoStack.append(step)
+        syncUndoState()
+        return nil
+    }
+
+    /// Ripete l'ultima azione annullata.
+    @discardableResult
+    func redo() -> String? {
+        guard let step = redoStack.last else { return nil }
+        if let error = replay(step, reversed: false) {
+            notice = error
+            return error
+        }
+        redoStack.removeLast()
+        undoStack.append(step)
+        syncUndoState()
+        return nil
+    }
+
+    /// Rifà (o disfa) un passo scrivendo i file. Non registra nulla nelle pile.
+    private func replay(_ step: UndoStep, reversed: Bool) -> String? {
+        switch step.change {
+        case .movements(let diff):
+            let d = reversed ? diff.inverted : diff
+            return mutateMovements(backup: .dailyIfNeeded, undoName: nil) { list in
+                d.apply(to: &list)
+                return nil
+            }
+        case .config(let before, let after):
+            let target = reversed ? before : after
+            return mutateConfig(undoName: nil) { cfg in
+                cfg = target
+                return nil
+            }
+        }
+    }
+
+    private func record(_ name: String, _ change: UndoChange) {
+        undoStack.append(UndoStep(name: name, change: change))
+        if undoStack.count > undoLimit { undoStack.removeFirst(undoStack.count - undoLimit) }
+        redoStack.removeAll()                       // una nuova azione cancella il "ripeti"
+        syncUndoState()
+    }
+
+    private func clearUndo() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        syncUndoState()
+    }
+
+    private func syncUndoState() {
+        undoName = undoStack.last?.name
+        redoName = redoStack.last?.name
+    }
+
     // MARK: Configurazione (calibri, limiti, armi)
 
     /// Rilegge armi.json da disco, applica `change` e lo riscrive (con copia di sicurezza).
-    func mutateConfig(_ change: (inout Config) -> String?) -> String? {
+    /// `undoName` è il nome dell'azione nel menu Annulla (nil = non annullabile).
+    func mutateConfig(undoName: String? = "Modifica impostazioni",
+                      _ change: (inout Config) -> String?) -> String? {
         guard let f = files else { return "Cartella dei dati non disponibile." }
         guard configWritable else { return "armi.json non è leggibile: non lo modifico per non perdere dati." }
 
@@ -316,6 +388,7 @@ final class DataStore: ObservableObject {
         } catch {
             return "armi.json non è leggibile (\(error.localizedDescription))."
         }
+        let before = current                                            // NUOVO
         if let error = change(&current) { return error }
         do {
             try f.saveConfig(current, backup: true)
@@ -324,6 +397,9 @@ final class DataStore: ObservableObject {
         }
         config = current
         configStamp = f.stamp(of: f.configURL)
+        if let name = undoName, current != before {                     // NUOVO
+            record(name, .config(before: before, after: current))
+        }
         return nil
     }
 
@@ -342,9 +418,7 @@ final class DataStore: ObservableObject {
                     newLogo: Data? = nil, removeLogo: Bool = false) -> String? {
         guard let f = files else { return "Cartella dei dati non disponibile." }
         var w = weapon
-        let previous = config.weapon(weapon.id)
-        let previousFile = previous?.imageFile
-        let previousLogo = previous?.logoFile
+        let isNew = config.weapon(weapon.id) == nil
 
         if let data = newImage {
             let name = "\(w.id)-\(Int(Date().timeIntervalSince1970)).jpg"
@@ -374,7 +448,7 @@ final class DataStore: ObservableObject {
         }
 
         let saved = w
-        let error = mutateConfig { cfg in
+        let error = mutateConfig(undoName: isNew ? "Nuova arma" : "Modifica arma") { cfg in
             if let i = cfg.weapons.firstIndex(where: { $0.id == saved.id }) {
                 cfg.weapons[i] = saved
             } else {
@@ -383,44 +457,27 @@ final class DataStore: ObservableObject {
             return nil
         }
 
-        if error == nil {
-            if let old = previousFile, old != saved.imageFile {
-                f.deleteImage(name: old)
-                imageCache = imageCache.filter { !$0.key.hasPrefix(old + "@") }
-            }
-            if let old = previousLogo, old != saved.logoFile {
-                f.deleteImage(name: old)
-                imageCache = imageCache.filter { !$0.key.hasPrefix(old + "@") }
-            }
-        } else {
+        if error != nil {
             // salvataggio fallito: tolgo i file appena scritti
             if newImage != nil, let name = saved.imageFile { f.deleteImage(name: name) }
             if let name = writtenLogo { f.deleteImage(name: name) }
         }
         return error
     }
-
     /// Elimina un'arma solo se non ha movimenti; altrimenti va archiviata.
     func deleteWeapon(_ id: String) -> String? {
         let n = movementCount(forWeapon: id)
         if n > 0 {
             return "L'arma ha \(n) movimenti nel registro: non si può eliminare. Archiviala per toglierla dal selettore."
         }
-        let image = config.weapon(id)?.imageFile
-        let logo = config.weapon(id)?.logoFile
-        let error = mutateConfig { cfg in
+        return mutateConfig(undoName: "Eliminazione arma") { cfg in
             cfg.weapons.removeAll { $0.id == id }
             return nil
         }
-        if error == nil {
-            if let image { files?.deleteImage(name: image) }
-            if let logo { files?.deleteImage(name: logo) }
-        }
-        return error
     }
 
     func setArchived(_ id: String, _ archived: Bool) -> String? {
-        mutateConfig { cfg in
+        mutateConfig(undoName: archived ? "Archivia arma" : "Ripristina arma") { cfg in
             guard let i = cfg.weapons.firstIndex(where: { $0.id == id }) else { return "Arma non trovata." }
             cfg.weapons[i].isArchived = archived
             return nil
