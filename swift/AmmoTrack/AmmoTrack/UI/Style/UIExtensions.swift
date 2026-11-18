@@ -104,7 +104,8 @@ enum BerettaBitmap {
     }
     private static var cache: [Key: CGImage] = [:]
 
-    static func image(height: CGFloat, tint: Color = Palette.muted) -> CGImage? {
+    static func image(height: CGFloat, tint: Color? = nil) -> CGImage? {
+        let tint = tint ?? Palette.muted          // letto qui dentro, dove siamo sul MainActor
         let key = Key(height: Int((height * 100).rounded()), tint: tint)
         if let cached = cache[key] { return cached }
         let renderer = ImageRenderer(content: BerettaIcon(height: height).foregroundStyle(tint))
