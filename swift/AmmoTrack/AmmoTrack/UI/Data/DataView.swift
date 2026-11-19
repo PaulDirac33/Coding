@@ -21,7 +21,7 @@ struct DataView: View {
         case charts
 
         var id: String { rawValue }
-        var symbol: String { self == .registry ? "tablecells" : "chart.xyaxis.line" }
+        var symbol: String { self == .registry ? "tablecells" : "chart.bar.xaxis.ascending" }
         var title: String { self == .registry ? "Registro" : "Grafici" }
     }
 
@@ -175,6 +175,7 @@ struct DataView: View {
             }
             .help("Importa dal foglio Numbers (CSV)…")
             .glassButton()
+            .buttonBorderShape(.capsule)
 
             Button {
                 exportCurrent()
@@ -184,13 +185,17 @@ struct DataView: View {
             }
             .help("Esporta in CSV quello che vedi (con i filtri attivi)")
             .glassButton()
+            .buttonBorderShape(.capsule)
 
             Button {
                 editing = EditorTarget(movement: nil)
             } label: {
-                Label("Nuovo", systemImage: "plus")
+                Image(systemName: "plus")
+                    .frame(width: 22, height: 22)
             }
+            .help("Nuovo movimento")
             .glassProminentButton()
+            .buttonBorderShape(.capsule)
         }
     }
 

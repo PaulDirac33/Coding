@@ -102,9 +102,12 @@ struct WeaponsView: View {
             Button {
                 editing = WeaponEditorTarget(weapon: nil)
             } label: {
-                Label("Nuova arma", systemImage: "plus")
+                Image(systemName: "plus")
+                    .frame(width: 22, height: 22)
             }
+            .help("Nuova arma")
             .glassProminentButton()
+            .buttonBorderShape(.capsule)
         }
         .frame(height: 40)
     }
