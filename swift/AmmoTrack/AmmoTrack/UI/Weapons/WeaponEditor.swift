@@ -37,6 +37,7 @@ struct WeaponEditor: View {
         self.weaponID = original?.id ?? UUID().uuidString
         _name = State(initialValue: original?.name ?? "")
         _caliberID = State(initialValue: original?.caliberID ?? "")
+        _qualification = State(initialValue: original?.qualification)
         _serial = State(initialValue: original?.serial ?? "")
         _notes = State(initialValue: original?.notes ?? "")
     }
