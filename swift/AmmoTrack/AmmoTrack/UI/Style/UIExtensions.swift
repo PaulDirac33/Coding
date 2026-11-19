@@ -201,19 +201,21 @@ struct WeaponImage: View {
     private var cartridge: CartridgeStyle {
         store.config.caliber(caliberID ?? weapon?.caliberID ?? "")?.cartridgeStyle ?? .pistol
     }
-    /// Segnaposto senza foto: la Beretta con il bossolo in piedi accanto, la scritta sotto.
+    /// Segnaposto senza foto: la sola Beretta, grande, con la scritta centrata sotto.
     private var placeholder: some View {
         GeometryReader { geo in
-            let gunH = min(geo.size.height * 0.52, geo.size.width * 0.66 / BerettaIcon.aspectRatio)
+            let labelRoom: CGFloat = 44          // spazio riservato alla scritta sotto
+            let gunH = max(10, min(geo.size.height - labelRoom,
+                                   geo.size.width * 0.92 / BerettaIcon.aspectRatio))
             let gunW = gunH * BerettaIcon.aspectRatio
-            VStack(spacing: gunH * 0.12) {
-                if let art = WeaponPlaceholderBitmap.image(style: cartridge) {
-                    Image(decorative: art, scale: WeaponPlaceholderBitmap.scale)
+            VStack(spacing: 8) {
+                if let art = BerettaBitmap.image(height: 220, tint: Color.white.opacity(0.30)) {
+                    Image(decorative: art, scale: 3)
                         .resizable()
                         .interpolation(.high)
                         .frame(width: gunW, height: gunH)
                 } else {
-                    WeaponPlaceholderArt(style: cartridge, gunHeight: gunH)     // ripiego: vettoriale
+                    BerettaIcon(height: gunH)                       // ripiego: vettoriale
                         .foregroundStyle(Color.white.opacity(0.30))
                 }
                 Text("Nessuna immagine")
