@@ -2,7 +2,8 @@
 //  WeaponsView.swift
 //
 //  Pagina "Armi": una scheda di vetro per arma con la foto (anteprima), il nome, la matricola, il calibro
-//  e quanto ha sparato. Foto: clic sull'immagine, oppure trascina un file sulla scheda.
+//  e quanto ha sparato. Un clic in un punto qualsiasi della scheda apre la modifica (foto compresa);
+//  si può anche trascinare un file immagine sulla scheda per cambiare la foto.
 //  Le armi archiviate escono dal selettore dell'Inserimento ma conservano lo storico.
 //
 
@@ -149,7 +150,6 @@ struct WeaponCard: View {
     let onEdit: () -> Void
     let onError: (String?) -> Void
 
-    @State private var choosingImage = false
     @State private var dropTargeted = false
 
     private var shots: Int { totals?.shots ?? 0 }
@@ -160,9 +160,12 @@ struct WeaponCard: View {
         return "\(numText(shots)) colpi · \(sessions) \(sessions == 1 ? "uscita" : "uscite")"
     }
 
-    private var lastText: String {
-        guard let d = totals?.lastDate else { return "" }
-        return "Ultimo uso: \(dayText(d))"
+    /// Seconda riga delle statistiche: "Archiviata" (se lo è) e l'ultimo uso.
+    private var detailText: String {
+        var parts: [String] = []
+        if weapon.isArchived { parts.append("Archiviata") }
+        if let d = totals?.lastDate { parts.append("Ultimo uso: \(dayText(d))") }
+        return parts.joined(separator: " · ")
     }
 
     var body: some View {
@@ -191,47 +194,21 @@ struct WeaponCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(statsText)
                     .font(.system(size: 14, weight: .semibold))
-                Text(lastText.isEmpty ? " " : lastText)
+                Text(detailText.isEmpty ? " " : detailText)
                     .font(.caption)
                     .foregroundStyle(Palette.muted)
             }
-
-            HStack(spacing: 10) {
-                Button {
-                    choosingImage = true
-                } label: {
-                    Label("Foto", systemImage: "photo")
-                }
-                .glassButton()
-                Button {
-                    onEdit()
-                } label: {
-                    Label("Modifica", systemImage: "pencil")
-                }
-                .glassButton()
-                Spacer()
-                if weapon.isArchived {
-                    Text("Archiviata")
-                        .font(.caption)
-                        .foregroundStyle(Palette.muted)
-                }
-            }
-            .controlSize(.small)
         }
         .padding(14)
         .liquidGlass(cornerRadius: 22)
         .opacity(weapon.isArchived ? 0.6 : 1)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .onTapGesture { onEdit() }                       // un clic ovunque sulla scheda = foglio di modifica
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Apre la modifica dell'arma")
         .contextMenu {
             Button("Modifica…") { onEdit() }
-            Button("Scegli foto…") { choosingImage = true }
-        }
-        .fileImporter(isPresented: $choosingImage, allowedContentTypes: [.image]) { result in
-            switch result {
-            case .success(let url):
-                attach(url)
-            case .failure(let failure):
-                onError(failure.localizedDescription)
-            }
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: { $0.isFileURL }) else { return false }
@@ -242,7 +219,7 @@ struct WeaponCard: View {
         }
     }
 
-    /// La foto, in proporzione 16:10. Clic = scegli un file; si può anche trascinare un file sulla scheda.
+    /// La foto, in proporzione 16:10. Il clic è della scheda intera; si può trascinare un file sulla scheda.
     private var picture: some View {
         Color.clear
             .aspectRatio(16.0 / 10.0, contentMode: .fit)
@@ -255,8 +232,6 @@ struct WeaponCard: View {
                     .opacity(dropTargeted ? 1 : 0)
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .onTapGesture { choosingImage = true }
             .animation(.easeOut(duration: 0.15), value: dropTargeted)
     }
 
