@@ -11,7 +11,8 @@ import UniformTypeIdentifiers
 
 struct WeaponEditor: View {
     @EnvironmentObject var store: DataStore
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
+    private func dismiss() { onClose() }
 
     let original: Weapon?
     private let weaponID: String
@@ -29,8 +30,9 @@ struct WeaponEditor: View {
     @State private var error: String? = nil
     @State private var confirmDelete = false
 
-    init(original: Weapon?) {
+    init(original: Weapon?, onClose: @escaping () -> Void) {
         self.original = original
+        self.onClose = onClose
         self.weaponID = original?.id ?? UUID().uuidString
         _name = State(initialValue: original?.name ?? "")
         _caliberID = State(initialValue: original?.caliberID ?? "")
