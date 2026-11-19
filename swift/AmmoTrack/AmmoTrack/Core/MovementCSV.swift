@@ -59,7 +59,7 @@ nonisolated enum MovementCSV {
 
     // MARK: Lettura
 
-    private static func parseKind(_ s: String) -> (kind: MovementKind, implied: Provenance?)? {
+    static func parseKind(_ s: String) -> (kind: MovementKind, implied: Provenance?)? {
         switch s {
         case "iniziale", "saldo iniziale", "saldo", "opening": return (.opening, nil)
         case "aggiunta", "aggiunte", "entrata", "add", "added": return (.added, nil)
@@ -71,7 +71,7 @@ nonisolated enum MovementCSV {
         }
     }
 
-    private static func parseProvenance(_ s: String) -> Provenance? {
+    static func parseProvenance(_ s: String) -> Provenance? {
         switch s {
         case "ricaricate", "ricaricata", "ricarica", "r": return .reloaded
         case "comprate", "comprata", "acquistate", "acquistata", "acquisto", "c": return .bought

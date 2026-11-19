@@ -88,7 +88,7 @@ struct DataView: View {
             MovementEditor(original: target.movement)
         }
         .sheet(isPresented: $showImport) {
-            ImportSheet()
+            ImportChooserSheet()
         }
         .fileExporter(isPresented: $exporting,
                       document: exportDocument,

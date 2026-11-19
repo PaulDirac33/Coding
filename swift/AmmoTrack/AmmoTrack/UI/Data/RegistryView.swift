@@ -111,7 +111,7 @@ struct RegistryView: View {
         } description: {
             Text("Il registro è vuoto, oppure i filtri non trovano nulla.\nInserisci un movimento dalla pagina Inserimento oppure importa il foglio Numbers.")
         } actions: {
-            Button("Importa da Numbers…") { onImport() }
+            Button("Importa da CSV") { onImport() }
                 .glassProminentButton()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

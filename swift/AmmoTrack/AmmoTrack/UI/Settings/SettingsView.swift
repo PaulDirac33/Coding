@@ -40,7 +40,7 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $showImport) {
-            ImportSheet()
+            ImportChooserSheet()
         }
         .onAppear { store.start() }
     }
@@ -203,7 +203,7 @@ struct SettingsView: View {
 
     private var importSection: some View {
         Section("Importazione") {
-            Button("Importa dal foglio Numbers (CSV)…") { showImport = true }
+            Button("Importa da CSV") { showImport = true }
             Text("Dopo l'importazione puoi continuare solo con l'app: i saldi si ricalcolano dai movimenti. L'esportazione in CSV è nella pagina Dati.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
