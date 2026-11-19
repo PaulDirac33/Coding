@@ -67,6 +67,7 @@ struct WeaponsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+                .zIndex(10)
             ErrorLine(text: actionError)
             if store.config.weapons.isEmpty {
                 emptyState
@@ -103,11 +104,12 @@ struct WeaponsView: View {
                 editing = WeaponEditorTarget(weapon: nil)
             } label: {
                 Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .semibold))
                     .frame(width: 22, height: 22)
             }
-            .help("Nuova arma")
             .glassProminentButton()
             .buttonBorderShape(.capsule)
+            .glassHint("Nuova arma", placement: .belowTrailing)
         }
         .frame(height: 40)
     }
