@@ -241,10 +241,16 @@ struct WeaponCard: View {
                     .padding(.vertical, 3)
                     .background(Capsule().fill(Color.white.opacity(0.12)))
             }
-            Text(weapon.serial.isEmpty ? "Matricola non indicata" : "Matricola \(weapon.serial)")
-                .font(.system(size: 13).monospacedDigit())
-                .foregroundStyle(weapon.serial.isEmpty ? Palette.muted : Color.white.opacity(0.85))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(weapon.qualification.map { "Qualifica \($0.label.lowercased())" } ?? "Qualifica non indicata")
+                    .font(.system(size: 13))
+                    .foregroundStyle(weapon.qualification == nil ? Palette.muted : Color.white.opacity(0.85))
+                    .lineLimit(1)
+                Text(weapon.serial.isEmpty ? "Matricola non indicata" : "Matricola \(weapon.serial)")
+                    .font(.system(size: 13).monospacedDigit())
+                    .foregroundStyle(weapon.serial.isEmpty ? Palette.muted : Color.white.opacity(0.85))
+                    .lineLimit(1)
+            }
 
             Rectangle()
                 .fill(Palette.line)

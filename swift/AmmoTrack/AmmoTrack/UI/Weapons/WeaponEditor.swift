@@ -19,6 +19,7 @@ struct WeaponEditor: View {
 
     @State private var name: String
     @State private var caliberID: String
+    @State private var qualification: WeaponQualification?
     @State private var serial: String
     @State private var notes: String
     @State private var newImage: Data? = nil
@@ -113,6 +114,12 @@ struct WeaponEditor: View {
                             .font(.caption)
                             .foregroundStyle(Palette.muted)
                     }
+                    Picker("Qualifica", selection: $qualification) {
+                        Text("Non indicata").tag(WeaponQualification?.none)
+                        ForEach(WeaponQualification.allCases) { q in
+                            Text(q.label).tag(WeaponQualification?.some(q))
+                        }
+                    }
                     TextField("Matricola", text: $serial)
                         .font(.body.monospacedDigit())
                     TextField("Note", text: $notes, axis: .vertical)
@@ -192,6 +199,7 @@ struct WeaponEditor: View {
         var w = original ?? Weapon(id: weaponID, name: trimmedName, caliberID: caliberID)
         w.name = trimmedName
         w.caliberID = caliberID
+        w.qualification = qualification
         w.serial = serial.trimmingCharacters(in: .whitespacesAndNewlines)
         w.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
 
