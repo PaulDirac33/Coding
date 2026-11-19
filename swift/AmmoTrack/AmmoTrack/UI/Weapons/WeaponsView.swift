@@ -2,7 +2,8 @@
 //  WeaponsView.swift
 //
 //  Pagina "Armi": una scheda di vetro per arma con la foto (anteprima), il nome, la matricola, il calibro
-//  e quanto ha sparato. Foto: clic sull'immagine, oppure trascina un file sulla scheda.
+//  e quanto ha sparato. Un clic in un punto qualsiasi della scheda apre la modifica (foto compresa);
+//  si può anche trascinare un file immagine sulla scheda per cambiare la foto.
 //  Le armi archiviate escono dal selettore dell'Inserimento ma conservano lo storico.
 //
 
@@ -37,6 +38,8 @@ struct WeaponsView: View {
     @State private var editing: WeaponEditorTarget? = nil
     @State private var showArchived = false
     @State private var actionError: String? = nil
+    /// Posizione della scheda cliccata (spazio "weaponsPage"): da lì nasce il foglio. nil = dal centro.
+    @State private var editorOrigin: CGRect? = nil
 
     private let columns = [GridItem(.adaptive(minimum: 300, maximum: 400), spacing: 18)]
 
@@ -66,6 +69,7 @@ struct WeaponsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+                .zIndex(10)
             ErrorLine(text: actionError)
             if store.config.weapons.isEmpty {
                 emptyState
@@ -76,9 +80,52 @@ struct WeaponsView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .sheet(item: $editing) { target in
-            WeaponEditor(original: target.weapon)
+        .coordinateSpace(.named("weaponsPage"))
+        .overlay { editorOverlay }
+    }
+    // MARK: Foglio di modifica (nasce dalla scheda)
+
+    private static let editorSpring = Animation.spring(response: 0.5, dampingFraction: 0.86)
+
+    private func openEditor(_ weapon: Weapon?, from frame: CGRect?) {
+        editorOrigin = frame
+        withAnimation(Self.editorSpring) { editing = WeaponEditorTarget(weapon: weapon) }
+    }
+
+    private func closeEditor() {
+        withAnimation(Self.editorSpring) { editing = nil }
+    }
+
+    /// Parte piccolo sopra la scheda cliccata e si ingrandisce fino al centro della pagina.
+    private func growTransition(in size: CGSize) -> AnyTransition {
+        var scale: CGFloat = 0.92
+        var offset = CGSize.zero
+        if let f = editorOrigin {
+            scale = min(f.width / 480, 1)                       // 480 = larghezza di WeaponEditor
+            offset = CGSize(width: f.midX - size.width / 2, height: f.midY - size.height / 2)
         }
+        return .modifier(active: GrowFromCard(scale: scale, offset: offset, opacity: 0),
+                         identity: GrowFromCard(scale: 1, offset: .zero, opacity: 1))
+    }
+
+    private var editorOverlay: some View {
+        GeometryReader { geo in
+            ZStack {
+                if let target = editing {
+                    Color.black.opacity(0.35)
+                        .transition(.opacity)
+                    WeaponEditor(original: target.weapon, onClose: closeEditor)
+                        .id(target.id)
+                        .frame(maxHeight: max(300, geo.size.height - 32))
+                        .liquidGlass(cornerRadius: 26)
+                        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.45), radius: 30, y: 12)
+                        .transition(growTransition(in: geo.size))
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .allowsHitTesting(editing != nil)
     }
 
     // MARK: Intestazione
@@ -99,11 +146,15 @@ struct WeaponsView: View {
                     .foregroundStyle(Palette.muted)
             }
             Button {
-                editing = WeaponEditorTarget(weapon: nil)
+                openEditor(nil, from: nil)
             } label: {
-                Label("Nuova arma", systemImage: "plus")
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 22, height: 22)
             }
             .glassProminentButton()
+            .buttonBorderShape(.capsule)
+            .glassHint("Nuova arma", placement: .belowTrailing)
         }
         .frame(height: 40)
     }
@@ -115,7 +166,7 @@ struct WeaponsView: View {
                 ForEach(visibleWeapons) { w in
                     WeaponCard(weapon: w,
                                totals: stats[w.id],
-                               onEdit: { editing = WeaponEditorTarget(weapon: w) },
+                               onEdit: { openEditor(w, from: $0) },
                                onError: { actionError = $0 })
                 }
             }
@@ -131,14 +182,22 @@ struct WeaponsView: View {
             Text("Aggiungi le tue armi con il calibro, la matricola e una foto.\nPotrai sceglierle dal tasto dell'arma nella pagina Inserimento.")
         } actions: {
             Button("Aggiungi un'arma") {
-                editing = WeaponEditorTarget(weapon: nil)
+                openEditor(nil, from: nil)
             }
             .glassProminentButton()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+private struct GrowFromCard: ViewModifier {
+    let scale: CGFloat
+    let offset: CGSize
+    let opacity: Double
 
+    func body(content: Content) -> some View {
+        content.scaleEffect(scale).offset(offset).opacity(opacity)
+    }
+}
 // MARK: - Scheda
 
 struct WeaponCard: View {
@@ -146,11 +205,11 @@ struct WeaponCard: View {
 
     let weapon: Weapon
     let totals: WeaponTotal?
-    let onEdit: () -> Void
+    let onEdit: (CGRect) -> Void
     let onError: (String?) -> Void
 
-    @State private var choosingImage = false
     @State private var dropTargeted = false
+    @State private var cardFrame: CGRect = .zero
 
     private var shots: Int { totals?.shots ?? 0 }
     private var sessions: Int { totals?.sessions ?? 0 }
@@ -160,9 +219,12 @@ struct WeaponCard: View {
         return "\(numText(shots)) colpi · \(sessions) \(sessions == 1 ? "uscita" : "uscite")"
     }
 
-    private var lastText: String {
-        guard let d = totals?.lastDate else { return "" }
-        return "Ultimo uso: \(dayText(d))"
+    /// Seconda riga delle statistiche: "Archiviata" (se lo è) e l'ultimo uso.
+    private var detailText: String {
+        var parts: [String] = []
+        if weapon.isArchived { parts.append("Archiviata") }
+        if let d = totals?.lastDate { parts.append("Ultimo uso: \(dayText(d))") }
+        return parts.joined(separator: " · ")
     }
 
     var body: some View {
@@ -179,10 +241,16 @@ struct WeaponCard: View {
                     .padding(.vertical, 3)
                     .background(Capsule().fill(Color.white.opacity(0.12)))
             }
-            Text(weapon.serial.isEmpty ? "Matricola non indicata" : "Matricola \(weapon.serial)")
-                .font(.system(size: 13).monospacedDigit())
-                .foregroundStyle(weapon.serial.isEmpty ? Palette.muted : Color.white.opacity(0.85))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(weapon.qualification.map { "Qualifica \($0.label.lowercased())" } ?? "Qualifica non indicata")
+                    .font(.system(size: 13))
+                    .foregroundStyle(weapon.qualification == nil ? Palette.muted : Color.white.opacity(0.85))
+                    .lineLimit(1)
+                Text(weapon.serial.isEmpty ? "Matricola non indicata" : "Matricola \(weapon.serial)")
+                    .font(.system(size: 13).monospacedDigit())
+                    .foregroundStyle(weapon.serial.isEmpty ? Palette.muted : Color.white.opacity(0.85))
+                    .lineLimit(1)
+            }
 
             Rectangle()
                 .fill(Palette.line)
@@ -191,47 +259,22 @@ struct WeaponCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(statsText)
                     .font(.system(size: 14, weight: .semibold))
-                Text(lastText.isEmpty ? " " : lastText)
+                Text(detailText.isEmpty ? " " : detailText)
                     .font(.caption)
                     .foregroundStyle(Palette.muted)
             }
-
-            HStack(spacing: 10) {
-                Button {
-                    choosingImage = true
-                } label: {
-                    Label("Foto", systemImage: "photo")
-                }
-                .glassButton()
-                Button {
-                    onEdit()
-                } label: {
-                    Label("Modifica", systemImage: "pencil")
-                }
-                .glassButton()
-                Spacer()
-                if weapon.isArchived {
-                    Text("Archiviata")
-                        .font(.caption)
-                        .foregroundStyle(Palette.muted)
-                }
-            }
-            .controlSize(.small)
         }
         .padding(14)
         .liquidGlass(cornerRadius: 22)
         .opacity(weapon.isArchived ? 0.6 : 1)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("weaponsPage")) } action: { cardFrame = $0 }
+        .onTapGesture { onEdit(cardFrame) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Apre la modifica dell'arma")
         .contextMenu {
-            Button("Modifica…") { onEdit() }
-            Button("Scegli foto…") { choosingImage = true }
-        }
-        .fileImporter(isPresented: $choosingImage, allowedContentTypes: [.image]) { result in
-            switch result {
-            case .success(let url):
-                attach(url)
-            case .failure(let failure):
-                onError(failure.localizedDescription)
-            }
+            Button("Modifica…") { onEdit(cardFrame) }
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: { $0.isFileURL }) else { return false }
@@ -242,7 +285,7 @@ struct WeaponCard: View {
         }
     }
 
-    /// La foto, in proporzione 16:10. Clic = scegli un file; si può anche trascinare un file sulla scheda.
+    /// La foto, in proporzione 16:10. Il clic è della scheda intera; si può trascinare un file sulla scheda.
     private var picture: some View {
         Color.clear
             .aspectRatio(16.0 / 10.0, contentMode: .fit)
@@ -255,8 +298,6 @@ struct WeaponCard: View {
                     .opacity(dropTargeted ? 1 : 0)
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .onTapGesture { choosingImage = true }
             .animation(.easeOut(duration: 0.15), value: dropTargeted)
     }
 

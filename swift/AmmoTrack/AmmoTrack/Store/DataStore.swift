@@ -306,6 +306,25 @@ final class DataStore: ObservableObject {
             return nil
         }
     }
+    /// Importa un CSV di AmmoTrack: prima registra i calibri e le armi che non ci sono ancora,
+    /// poi aggiunge i movimenti. Per ⌘Z sono due passi: prima si annullano i movimenti, poi le armi.
+    func importAmmoTrack(_ report: AmmoTrackImportReport) -> String? {
+        let calibers = report.newCalibers
+        let weapons = report.newWeapons
+        if !calibers.isEmpty || !weapons.isEmpty {
+            let failure = mutateConfig(undoName: "Importazione di armi e calibri") { cfg in
+                for c in calibers where !cfg.calibers.contains(where: { $0.id == c.id }) {
+                    cfg.calibers.append(c)
+                }
+                for w in weapons where !cfg.weapons.contains(where: { $0.id == w.id }) {
+                    cfg.weapons.append(w)
+                }
+                return nil
+            }
+            if let failure { return failure }
+        }
+        return importMovements(report.movements, replacingPrefix: nil)
+    }
 
     // MARK: Annulla / Ripeti (⌘Z, ⇧⌘Z)
 

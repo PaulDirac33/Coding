@@ -156,12 +156,29 @@ nonisolated struct Caliber: Identifiable, Codable, Hashable, Sendable {
 }
 
 // MARK: - Arma
+/// Qualifica dell'arma.
+nonisolated enum WeaponQualification: String, Codable, CaseIterable, Identifiable, Sendable {
+    case sporting = "sportiva"
+    case common = "comune"
+    case hunting = "caccia"
 
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .sporting: return "Sportiva"
+        case .common: return "Comune"
+        case .hunting: return "Da caccia"
+        }
+    }
+}
 nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
     var id: String
     var name: String
     /// Il calibro è incorporato nell'arma. Con un kit di conversione crea un'arma separata.
     var caliberID: String
+    /// Sportiva, comune o da caccia (nil = non indicata).
+    var qualification: WeaponQualification?
     var serial: String          // matricola
     var notes: String
     /// Nome del file immagine dentro la cartella "Immagini" (nil = nessuna immagine).
@@ -174,6 +191,7 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
     init(id: String = UUID().uuidString,
          name: String = "",
          caliberID: String,
+         qualification: WeaponQualification? = nil,
          serial: String = "",
          notes: String = "",
          imageFile: String? = nil,
@@ -182,6 +200,7 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
         self.id = id
         self.name = name
         self.caliberID = caliberID
+        self.qualification = qualification
         self.serial = serial
         self.notes = notes
         self.imageFile = imageFile
@@ -189,13 +208,14 @@ nonisolated struct Weapon: Identifiable, Codable, Hashable, Sendable {
         self.isArchived = isArchived
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, caliberID, serial, notes, imageFile, logoFile, isArchived }
+    enum CodingKeys: String, CodingKey { case id, name, caliberID, qualification, serial, notes, imageFile, logoFile, isArchived }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
         self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         self.caliberID = try c.decodeIfPresent(String.self, forKey: .caliberID) ?? ""
+        self.qualification = try c.decodeIfPresent(WeaponQualification.self, forKey: .qualification)
         self.serial = try c.decodeIfPresent(String.self, forKey: .serial) ?? ""
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         self.imageFile = try c.decodeIfPresent(String.self, forKey: .imageFile)

@@ -21,7 +21,7 @@ struct DataView: View {
         case charts
 
         var id: String { rawValue }
-        var symbol: String { self == .registry ? "tablecells" : "chart.xyaxis.line" }
+        var symbol: String { self == .registry ? "tablecells" : "chart.bar.xaxis.ascending" }
         var title: String { self == .registry ? "Registro" : "Grafici" }
     }
 
@@ -77,6 +77,7 @@ struct DataView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+                .zIndex(10)
             ErrorLine(text: actionError)
             content
         }
@@ -87,7 +88,7 @@ struct DataView: View {
             MovementEditor(original: target.movement)
         }
         .sheet(isPresented: $showImport) {
-            ImportSheet()
+            ImportChooserSheet()
         }
         .fileExporter(isPresented: $exporting,
                       document: exportDocument,
@@ -171,26 +172,36 @@ struct DataView: View {
                 showImport = true
             } label: {
                 Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 15, weight: .semibold))
+                    .offset(x: 0.495, y: -2.5)
                     .frame(width: 22, height: 22)
             }
-            .help("Importa dal foglio Numbers (CSV)…")
             .glassButton()
+            .buttonBorderShape(.capsule)
+            .glassHint("Importa da CSV")
 
             Button {
                 exportCurrent()
             } label: {
                 Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 15, weight: .semibold))
+                    .offset(x: 0.495, y: -2.5)
                     .frame(width: 22, height: 22)
             }
-            .help("Esporta in CSV quello che vedi (con i filtri attivi)")
             .glassButton()
+            .buttonBorderShape(.capsule)
+            .glassHint("Esporta in CSV")
 
             Button {
                 editing = EditorTarget(movement: nil)
             } label: {
-                Label("Nuovo", systemImage: "plus")
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 22, height: 22)
             }
             .glassProminentButton()
+            .buttonBorderShape(.capsule)
+            .glassHint("Nuovo movimento", placement: .belowTrailing)
         }
     }
 
