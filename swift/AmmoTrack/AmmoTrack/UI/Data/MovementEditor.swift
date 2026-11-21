@@ -10,7 +10,9 @@ import SwiftUI
 
 struct MovementEditor: View {
     @EnvironmentObject var store: DataStore
-    @Environment(\.dismiss) private var dismiss
+
+    let onClose: () -> Void
+    private func dismiss() { onClose() }
 
     let original: Movement?
 
@@ -26,8 +28,9 @@ struct MovementEditor: View {
     @State private var error: String? = nil
     @State private var confirmDelete = false
 
-    init(original: Movement?) {
+    init(original: Movement?, onClose: @escaping () -> Void) {
         self.original = original
+        self.onClose = onClose
         let m = original
         _kind = State(initialValue: m?.kind ?? .shot)
         _provenance = State(initialValue: m?.provenance ?? .reloaded)

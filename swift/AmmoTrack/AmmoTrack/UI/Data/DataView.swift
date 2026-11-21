@@ -36,6 +36,8 @@ struct DataView: View {
     @State var exportDocument = CSVDocument(text: "")
     @State var actionError: String? = nil
     @State var selection: String? = nil        // riga selezionata nel registro (clic o frecce)
+    @State var showWeaponMenu = false          // menù di vetro del filtro armi
+    @State var weaponButtonFrame: CGRect = .zero   // dove sta il pulsante (da lì si apre il menù)
 
     // MARK: Filtri
 
@@ -86,9 +88,9 @@ struct DataView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .sheet(item: $editing) { target in
-            MovementEditor(original: target.movement)
-        }
+        .coordinateSpace(.named("dataPage"))
+        .overlay { editorOverlay }
+        .overlay { weaponMenuOverlay }
         .sheet(isPresented: $showImport) {
             ImportChooserSheet()
         }
@@ -100,7 +102,11 @@ struct DataView: View {
                 actionError = failure.localizedDescription
             }
         }
-    .dataShortcuts(isActive: isActive) { handleKey($0) }
+        // I tasti della pagina si fermano mentre l'editor o il menù delle armi sono aperti.
+        .dataShortcuts(isActive: isActive && editing == nil && !showWeaponMenu) { handleKey($0) }
+        .onChange(of: isActive) { _, active in
+            if !active { showWeaponMenu = false }
+        }
     }
 
     // MARK: Intestazione
@@ -140,15 +146,10 @@ struct DataView: View {
         }
         .frame(height: 40)
     }
-
-    /// Filtro per arma (solo nel registro).
+    /// Filtro per arma (solo nel registro). Il menù di vetro è in DataView+Glass.swift.
     var weaponMenu: some View {
-        Menu {
-            Button("Tutte le armi") { withAnimation(Self.slide) { weaponFilter = nil } }
-            Divider()
-            ForEach(store.config.weapons) { w in
-                Button(w.isArchived ? "\(w.name) (archiviata)" : w.name) { withAnimation(Self.slide) { weaponFilter = w.id } }
-            }
+        Button {
+            withAnimation(Self.slide) { showWeaponMenu.toggle() }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "scope")
@@ -160,10 +161,11 @@ struct DataView: View {
             .padding(.horizontal, 14)
             .frame(height: 36)
             .glassCapsule(interactive: true)
+            .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
         .fixedSize()
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("dataPage")) } action: { weaponButtonFrame = $0 }
     }
 
     var actions: some View {
