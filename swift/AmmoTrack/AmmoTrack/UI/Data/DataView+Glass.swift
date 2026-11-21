@@ -136,6 +136,69 @@ extension DataView {
     private func closeWeaponMenu() {
         withAnimation(Self.slide) { showWeaponMenu = false }
     }
+    // MARK: Menù delle azioni
+
+    /// Le voci del menù: titolo, simbolo e che cosa fanno.
+    private var actionItems: [(title: String, symbol: String, run: () -> Void)] {
+        [("Nuovo movimento", "plus", { editing = EditorTarget(movement: nil) }),
+         ("Importa da CSV", "square.and.arrow.down", { showImport = true }),
+         ("Esporta in CSV", "square.and.arrow.up", { exportCurrent() })]
+    }
+
+    /// Voce più lunga + simbolo (16 + 8) + margine della voce (28) + margine del pannello (16) + respiro.
+    private var actionsPanelWidth: CGFloat {
+        let longest = actionItems.map { menuTextWidth($0.title) }.max() ?? 0
+        return max(longest + 84, 150)
+    }
+
+    var actionsMenuOverlay: some View {
+        GeometryReader { geo in
+            let width = actionsPanelWidth
+            let x = max(8, min(actionsButtonFrame.minX, geo.size.width - width - 16))
+            ZStack(alignment: .topLeading) {
+                if showActionsMenu {
+                    // Clic fuori dal pannello: chiude.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeActionsMenu() }
+                    // Esc chiude.
+                    Button("") { closeActionsMenu() }
+                        .keyboardShortcut(.cancelAction)
+                        .opacity(0)
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
+                }
+                actionsPanel
+                    .scaleEffect(showActionsMenu ? 1 : 0.92, anchor: .topLeading)
+                    .opacity(showActionsMenu ? 1 : 0)
+                    .offset(x: x, y: actionsButtonFrame.maxY + 8)
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .animation(Self.slide, value: showActionsMenu)
+        }
+        .allowsHitTesting(showActionsMenu)
+    }
+
+    private var actionsPanel: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(actionItems.indices, id: \.self) { i in
+                let item = actionItems[i]
+                GlassMenuRow(title: item.title, symbol: item.symbol, selected: false) {
+                    closeActionsMenu()
+                    item.run()
+                }
+            }
+        }
+        .padding(8)
+        .frame(width: actionsPanelWidth)
+        .liquidGlass(cornerRadius: 22)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: Color.black.opacity(0.45), radius: 24, y: 10)
+    }
+
+    private func closeActionsMenu() {
+        withAnimation(Self.slide) { showActionsMenu = false }
+    }
 }
 
 // MARK: - Voce del menù di vetro
@@ -144,6 +207,7 @@ extension DataView {
 /// del selettore (la stessa "lente" a riposo di GlassSegmented e del banner armi).
 private struct GlassMenuRow: View {
     let title: String
+    var symbol: String? = nil
     let selected: Bool
     let action: () -> Void
 
@@ -152,10 +216,18 @@ private struct GlassMenuRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 0) {
-                Text(title)
-                    .font(.system(size: 13, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    if let symbol {
+                        Image(systemName: symbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 16)
+                    }
+                    Text(title)
+                        .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)

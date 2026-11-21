@@ -38,6 +38,8 @@ struct DataView: View {
     @State var selection: String? = nil        // riga selezionata nel registro (clic o frecce)
     @State var showWeaponMenu = false          // menù di vetro del filtro armi
     @State var weaponButtonFrame: CGRect = .zero   // dove sta il pulsante (da lì si apre il menù)
+    @State var showActionsMenu = false              // menù di vetro delle azioni (nuovo, importa, esporta)
+    @State var actionsButtonFrame: CGRect = .zero   // dove sta il suo pulsante
 
     // MARK: Filtri
 
@@ -91,6 +93,7 @@ struct DataView: View {
         .coordinateSpace(.named("dataPage"))
         .overlay { editorOverlay }
         .overlay { weaponMenuOverlay }
+        .overlay { actionsMenuOverlay }
         .sheet(isPresented: $showImport) {
             ImportChooserSheet()
         }
@@ -105,7 +108,8 @@ struct DataView: View {
         // I tasti della pagina si fermano mentre l'editor o il menù delle armi sono aperti.
         .dataShortcuts(isActive: isActive && editing == nil && !showWeaponMenu) { handleKey($0) }
         .onChange(of: isActive) { _, active in
-            if !active { showWeaponMenu = false }
+            if !active { showWeaponMenu = false
+                showActionsMenu = false}
         }
     }
 
@@ -136,13 +140,13 @@ struct DataView: View {
 
             if mode == .registry {
                 weaponMenu
+                actionsMenu
+                Text("#\(numText(filteredRows.count))")
+                                    .font(.system(size: 13, weight: .bold).monospacedDigit())
+                                    .foregroundStyle(Palette.muted)
             }
 
             Spacer(minLength: 8)
-
-            if mode == .registry {
-                actions
-            }
         }
         .frame(height: 40)
     }
@@ -167,47 +171,23 @@ struct DataView: View {
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("dataPage")) } action: { weaponButtonFrame = $0 }
     }
 
-    var actions: some View {
-        HStack(spacing: 10) {
-            Text("\(numText(filteredRows.count)) movimenti")
-                .font(.caption)
-                .foregroundStyle(Palette.muted)
-            Button {
-                showImport = true
-            } label: {
-                Image(systemName: "square.and.arrow.down")
-                    .font(.system(size: 15, weight: .semibold))
-                    .offset(x: 0.495, y: -2.5)
-                    .frame(width: 22, height: 22)
-            }
-            .glassButton()
-            .buttonBorderShape(.capsule)
-            .glassHint("Importa da CSV")
-
-            Button {
-                exportCurrent()
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 15, weight: .semibold))
-                    .offset(x: 0.495, y: -2.5)
-                    .frame(width: 22, height: 22)
-            }
-            .glassButton()
-            .buttonBorderShape(.capsule)
-            .glassHint("Esporta in CSV")
-
-            Button {
-                editing = EditorTarget(movement: nil)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 22, height: 22)
-            }
-            .glassProminentButton()
-            .buttonBorderShape(.capsule)
-            .glassHint("Nuovo movimento", placement: .belowTrailing)
-        }
+/// Menù delle azioni (solo nel registro): nuovo movimento, importa, esporta. Il pannello è in DataView+Glass.swift.
+var actionsMenu: some View {
+    Button {
+        withAnimation(Self.slide) { showActionsMenu.toggle() }
+    } label: {
+        Image(systemName: "ellipsis")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color.white)
+            .frame(width: 36, height: 36)
+            .glassCapsule(interactive: true)
+            .contentShape(Capsule())
     }
+    .buttonStyle(.plain)
+    .fixedSize()
+    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("dataPage")) } action: { actionsButtonFrame = $0 }
+    .glassHint("Azioni")
+}
 
     // MARK: Contenuto
 
