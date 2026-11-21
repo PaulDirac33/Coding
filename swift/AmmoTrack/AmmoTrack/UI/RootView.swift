@@ -152,7 +152,7 @@ struct RootView: View {
                 EntryView(isActive: page == .entry)
                     .frame(width: w, height: h)
                     .allowsHitTesting(page == .entry)
-                DataView()
+                DataView(isActive: page == .data)
                     .frame(width: w, height: h)
                     .allowsHitTesting(page == .data)
                 WeaponsView()

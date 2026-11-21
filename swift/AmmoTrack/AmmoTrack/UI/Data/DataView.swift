@@ -15,7 +15,8 @@ struct EditorTarget: Identifiable {
 
 struct DataView: View {
     @EnvironmentObject var store: DataStore
-
+    /// true quando questa è la pagina visibile: solo allora ascolta i tasti.
+    let isActive: Bool
     enum Mode: String, CaseIterable, Identifiable {
         case registry
         case charts
@@ -34,6 +35,7 @@ struct DataView: View {
     @State var exporting = false
     @State var exportDocument = CSVDocument(text: "")
     @State var actionError: String? = nil
+    @State var selection: String? = nil        // riga selezionata nel registro (clic o frecce)
 
     // MARK: Filtri
 
@@ -98,6 +100,7 @@ struct DataView: View {
                 actionError = failure.localizedDescription
             }
         }
+    .dataShortcuts(isActive: isActive) { handleKey($0) }
     }
 
     // MARK: Intestazione
@@ -213,7 +216,8 @@ struct DataView: View {
                 RegistryView(rows: filteredRows,
                              onEdit: { editing = EditorTarget(movement: $0) },
                              onDelete: { delete($0) },
-                             onImport: { showImport = true })
+                             onImport: { showImport = true },
+                             selection: $selection)
                     .transition(.opacity)
             } else {
                 ChartsView(filter: effectiveFilter, period: period)

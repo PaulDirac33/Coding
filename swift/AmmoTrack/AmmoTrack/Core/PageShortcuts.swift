@@ -97,7 +97,7 @@ struct PageShortcuts: ViewModifier {
 // MARK: - Finestra della vista
 
 /// Vista invisibile che dice in quale finestra si trova (stesso principio di BlurBackingView).
-private struct WindowReader: NSViewRepresentable {
+struct WindowReader: NSViewRepresentable {
     let onWindow: @MainActor (NSWindow?) -> Void
 
     func makeNSView(context: Context) -> NSView {
