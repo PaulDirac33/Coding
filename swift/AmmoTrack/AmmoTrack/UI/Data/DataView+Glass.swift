@@ -23,7 +23,6 @@ extension DataView {
                         .transition(.opacity)
                     MovementEditor(original: target.movement, onClose: { editing = nil })
                         .id(target.id)
-                        .frame(maxHeight: max(300, geo.size.height - 32))
                         .liquidGlass(cornerRadius: 26)
                         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
                         .shadow(color: Color.black.opacity(0.45), radius: 30, y: 12)

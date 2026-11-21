@@ -95,7 +95,7 @@ struct RegistryView: View {
                     ForEach(rows) { row in
                         RegistryRow(row: row, selected: selection == row.id)
                             .onTapGesture(count: 2) { onEdit(row.movement) }
-                            .onTapGesture { selection = row.id }
+                            .simultaneousGesture(TapGesture().onEnded { selection = row.id })
                             .contextMenu {
                                 Button("Modifica…") { onEdit(row.movement) }
                                 Divider()

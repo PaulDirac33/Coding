@@ -99,6 +99,8 @@ struct MovementEditor: View {
                 TextField("Nota", text: $note)
             }
             .formStyle(.grouped)
+            .scrollDisabled(true)
+                        .fixedSize(horizontal: false, vertical: true)
 
             ErrorLine(text: error)
                 .padding(.horizontal, 20)
