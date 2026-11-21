@@ -108,7 +108,7 @@ struct DataView: View {
     var header: some View {
         HStack(spacing: 14) {
             GlassSegmented(options: Mode.allCases,
-                           selection: $mode,
+                           selection: $mode.animation(Self.slide),
                            segmentWidth: 56) { m, selected in
                 Image(systemName: m.symbol)
                     .font(.system(size: 15, weight: .semibold))
@@ -117,13 +117,13 @@ struct DataView: View {
             }
 
             GlassSegmented(options: caliberOptions,
-                           selection: $caliberFilter,
+                           selection: $caliberFilter.animation(Self.slide),
                            segmentWidth: 74) { f, selected in
                 glassLabel(filterTitle(f), selected: selected)
             }
 
             GlassSegmented(options: Period.allCases,
-                           selection: $period,
+                           selection: $period.animation(Self.slide),
                            segmentWidth: 66) { p, selected in
                 glassLabel(p.rawValue, selected: selected)
             }
@@ -144,10 +144,10 @@ struct DataView: View {
     /// Filtro per arma (solo nel registro).
     var weaponMenu: some View {
         Menu {
-            Button("Tutte le armi") { weaponFilter = nil }
+            Button("Tutte le armi") { withAnimation(Self.slide) { weaponFilter = nil } }
             Divider()
             ForEach(store.config.weapons) { w in
-                Button(w.isArchived ? "\(w.name) (archiviata)" : w.name) { weaponFilter = w.id }
+                Button(w.isArchived ? "\(w.name) (archiviata)" : w.name) { withAnimation(Self.slide) { weaponFilter = w.id } }
             }
         } label: {
             HStack(spacing: 6) {

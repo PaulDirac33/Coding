@@ -139,7 +139,7 @@ struct DataShortcuts: ViewModifier {
 extension DataView {
 
     /// Stessa molla del pager: la lente dei selettori scorre insieme ai cambi.
-    private static let slide = Animation.spring(response: 0.48, dampingFraction: 0.90)
+    static let slide = Animation.spring(response: 0.48, dampingFraction: 0.90)
 
     /// true = il tasto è stato usato (e non arriva ad altri).
     func handleKey(_ key: DataKey) -> Bool {
