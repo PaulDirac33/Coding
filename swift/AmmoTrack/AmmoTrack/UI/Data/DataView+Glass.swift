@@ -7,6 +7,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 extension DataView {
 
@@ -35,7 +38,30 @@ extension DataView {
 
     // MARK: Menù del filtro armi
 
-    private var weaponPanelWidth: CGFloat { 260 }
+    // MARK: Larghezza del menù
+
+    /// Testo mostrato da una voce del menù (stesso testo di GlassMenuRow).
+    private func weaponMenuTitle(_ w: Weapon) -> String {
+        w.isArchived ? "\(w.name) (archiviata)" : w.name
+    }
+
+    /// Larghezza del testo nel font delle voci (13 pt semibold: il caso più largo).
+    private func menuTextWidth(_ text: String) -> CGFloat {
+        #if os(macOS)
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        #else
+        return CGFloat(text.count) * 7.5      // stima, per un eventuale iOS
+        #endif
+    }
+
+    /// Voce più lunga + margine della voce (14 + 14) + margine del pannello (8 + 8) + un po' di respiro.
+    private var weaponPanelWidth: CGFloat {
+        let titles = ["Tutte le armi"] + store.config.weapons.map { weaponMenuTitle($0) }
+        let longest = titles.map { menuTextWidth($0) }.max() ?? 0
+        let breathing: CGFloat = 4                  // "poco più": alza o abbassa a gusto
+        return min(max(longest + 28 + 16 + breathing, 150), 320)
+    }
 
     var weaponMenuOverlay: some View {
         GeometryReader { geo in
@@ -86,7 +112,7 @@ extension DataView {
                         .padding(.horizontal, 6)
                 }
                 ForEach(weapons) { w in
-                    GlassMenuRow(title: w.isArchived ? "\(w.name) (archiviata)" : w.name,
+                    GlassMenuRow(title: weaponMenuTitle(w),
                                  selected: weaponFilter == w.id) {
                         chooseWeapon(w.id)
                     }

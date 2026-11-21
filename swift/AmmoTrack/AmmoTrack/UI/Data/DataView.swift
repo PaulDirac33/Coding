@@ -152,7 +152,6 @@ struct DataView: View {
             withAnimation(Self.slide) { showWeaponMenu.toggle() }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "scope")
                 Text(weaponFilterName)
                     .lineLimit(1)
             }
