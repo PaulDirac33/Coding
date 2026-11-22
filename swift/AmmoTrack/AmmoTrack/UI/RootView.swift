@@ -162,6 +162,19 @@ struct RootView: View {
             .offset(x: -CGFloat(page.index) * w)
             .animation(.spring(response: 0.48, dampingFraction: 0.90), value: page)
         }
-        .clipped()
+        .clipShape(PagerClip())
+    }
+}
+/// Ritaglio del pager: preciso ai lati (le pagine vicine non devono vedersi),
+/// con un margine in alto e in basso perché le bolle di vetro dei selettori,
+/// ingrandite al tocco, e le loro ombre non vengano tagliate.
+struct PagerClip: Shape {
+    var bleed: CGFloat = 16
+
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: rect.minX,
+                    y: rect.minY - bleed,
+                    width: rect.width,
+                    height: rect.height + bleed * 2))
     }
 }
