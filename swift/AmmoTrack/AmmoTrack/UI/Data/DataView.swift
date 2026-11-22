@@ -137,16 +137,11 @@ struct DataView: View {
                            segmentWidth: 66) { p, selected in
                 glassLabel(p.rawValue, selected: selected)
             }
-
+            Spacer(minLength: 8)
             if mode == .registry {
                 weaponMenu
                 actionsMenu
-                Text("#\(numText(filteredRows.count))")
-                                    .font(.system(size: 13, weight: .bold).monospacedDigit())
-                                    .foregroundStyle(Palette.muted)
             }
-
-            Spacer(minLength: 8)
         }
         .frame(height: 40)
     }
@@ -176,8 +171,9 @@ var actionsMenu: some View {
     Button {
         withAnimation(Self.slide) { showActionsMenu.toggle() }
     } label: {
-        Image(systemName: "ellipsis")
-            .font(.system(size: 15, weight: .semibold))
+        Text("#\(numText(filteredRows.count))")
+            .font(.system(size: 11, weight: .bold)
+            .monospacedDigit())
             .foregroundStyle(Color.white)
             .frame(width: 36, height: 36)
             .glassCapsule(interactive: true)
