@@ -144,9 +144,13 @@ struct DataView: View {
                 glassLabel(p.rawValue, selected: selected)
             }
             Spacer(minLength: 8)
+
             if mode == .registry {
-                weaponMenu
-                actionsMenu
+                HStack(spacing: 14) {
+                    weaponMenu
+                    actionsMenu
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(height: 40)
