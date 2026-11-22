@@ -92,28 +92,31 @@ extension DataView {
 
     private var weaponPanel: some View {
         let weapons = store.config.weapons
-        let hasDivider = !weapons.isEmpty
-        // Altezza naturale delle voci (34 pt l'una, 2 pt fra loro, 8 pt di margine sopra e sotto):
-        // oltre i 360 pt il menù scorre.
-        let children = weapons.count + 1 + (hasDivider ? 1 : 0)
-        let natural = CGFloat(weapons.count + 1) * 34 + (hasDivider ? 9 : 0) + CGFloat(children - 1) * 2 + 16
+        // Altezza naturale: 34 pt a voce, 9 pt a linea (1 + 4 + 4), 2 pt fra gli elementi, 8 pt di margine sopra e sotto.
+        let rows = weapons.count + 3
+        let dividers = weapons.isEmpty ? 1 : 2
+        let children = rows + dividers
+        let natural = CGFloat(rows) * 34 + CGFloat(dividers) * 9 + CGFloat(children - 1) * 2 + 16
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                GlassMenuRow(title: "Tutte le armi", selected: weaponFilter == nil) {
-                    chooseWeapon(nil)
+                GlassMenuRow(title: "Filtro non attivo",
+                             selected: weaponFilter == nil && entryFilter == nil) {
+                    chooseFilter(weapon: nil, entries: nil)
                 }
-                if hasDivider {
-                    Rectangle()
-                        .fill(Palette.line)
-                        .frame(height: 1)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 6)
+                menuDivider
+                GlassMenuRow(title: "Solo ricariche", selected: entryFilter == .reloaded) {
+                    chooseFilter(weapon: nil, entries: .reloaded)
+                }
+                GlassMenuRow(title: "Solo acquisti", selected: entryFilter == .bought) {
+                    chooseFilter(weapon: nil, entries: .bought)
+                }
+                if !weapons.isEmpty {
+                    menuDivider
                 }
                 ForEach(weapons) { w in
-                    GlassMenuRow(title: weaponMenuTitle(w),
-                                 selected: weaponFilter == w.id) {
-                        chooseWeapon(w.id)
+                    GlassMenuRow(title: weaponMenuTitle(w), selected: weaponFilter == w.id) {
+                        chooseFilter(weapon: w.id, entries: nil)
                     }
                 }
             }
@@ -126,9 +129,18 @@ extension DataView {
         .shadow(color: Color.black.opacity(0.45), radius: 24, y: 10)
     }
 
-    private func chooseWeapon(_ id: String?) {
+    private var menuDivider: some View {
+        Rectangle()
+            .fill(Palette.line)
+            .frame(height: 1)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+    }
+
+    private func chooseFilter(weapon: String?, entries: Provenance?) {
         withAnimation(Self.slide) {
-            weaponFilter = id
+            weaponFilter = weapon
+            entryFilter = entries
             showWeaponMenu = false
         }
     }

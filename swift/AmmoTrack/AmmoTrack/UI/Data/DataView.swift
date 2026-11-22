@@ -30,6 +30,7 @@ struct DataView: View {
     @State var caliberFilter: CaliberFilter = .all
     @State var period: Period = .all
     @State var weaponFilter: String? = nil
+    @State var entryFilter: Provenance? = nil     // nil = nessuno · .reloaded = solo ricariche · .bought = solo acquisti
     @State var editing: EditorTarget? = nil
     @State var showImport = false
     @State var exporting = false
@@ -61,9 +62,13 @@ struct DataView: View {
     }
 
     var weaponFilterName: String {
-        guard let id = weaponFilter else { return "Tutte le armi" }
+        if let p = entryFilter { return p == .reloaded ? "Solo ricariche" : "Solo acquisti" }
+        guard let id = weaponFilter else { return "Filtro non attivo" }
         return store.config.weapon(id)?.name ?? "Arma eliminata"
     }
+
+    /// true se è attivo un qualunque filtro del menù (arma, solo ricariche, solo acquisti).
+    var isFilterActive: Bool { weaponFilter != nil || entryFilter != nil }
 
     /// Righe del registro dopo i filtri, dalla più recente.
     var filteredRows: [LedgerRow] {
@@ -72,6 +77,7 @@ struct DataView: View {
         let selected = store.ledger.rows.filter { r in
             if let cid, r.movement.caliberID != cid { return false }
             if let w = weaponFilter, r.movement.weaponID != w { return false }
+            if let p = entryFilter, !(r.movement.kind == .added && r.movement.provenance == p) { return false }
             if let since, r.movement.date < since { return false }
             return true
         }
@@ -154,8 +160,8 @@ struct DataView: View {
                 Text(weaponFilterName)
                     .lineLimit(1)
             }
-            .font(.system(size: 13, weight: weaponFilter == nil ? .medium : .semibold))
-            .foregroundStyle(weaponFilter == nil ? Color.white.opacity(0.68) : Color.white)
+            .font(.system(size: 13, weight: !isFilterActive ? .medium : .semibold))
+            .foregroundStyle(!isFilterActive ? Color.white.opacity(0.68) : Color.white)
             .padding(.horizontal, 14)
             .frame(height: 36)
             .glassCapsule(interactive: true)
