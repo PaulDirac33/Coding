@@ -159,6 +159,9 @@ struct WeaponsView: View {
         .frame(height: 40)
     }
 
+    /// Altezza della sfumatura ai bordi alto e basso (come lo spazio fra intestazione e schede).
+    private let edgeFade: CGFloat = 16
+
     private var grid: some View {
         let stats = totals
         return ScrollView {
@@ -170,9 +173,26 @@ struct WeaponsView: View {
                                onError: { actionError = $0 })
                 }
             }
-            .padding(.bottom, 8)
+            // A riposo la prima e l'ultima scheda stanno fuori dalla sfumatura.
+            .padding(.top, edgeFade)
+            .padding(.bottom, edgeFade + 8)
         }
         .scrollIndicators(.hidden)
+        .mask { edgeFadeMask }
+        // L'area che scorre si allarga di edgeFade sopra e sotto, così a riposo il layout non cambia.
+        .padding(.top, -edgeFade)
+        .padding(.bottom, -edgeFade)
+    }
+
+    /// Opaca al centro, trasparente ai due bordi.
+    private var edgeFadeMask: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [Color.clear, Color.black], startPoint: .top, endPoint: .bottom)
+                .frame(height: edgeFade)
+            Rectangle().fill(Color.black)
+            LinearGradient(colors: [Color.black, Color.clear], startPoint: .top, endPoint: .bottom)
+                .frame(height: edgeFade)
+        }
     }
 
     private var emptyState: some View {
