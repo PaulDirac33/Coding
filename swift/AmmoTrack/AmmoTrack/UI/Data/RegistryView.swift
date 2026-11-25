@@ -24,7 +24,7 @@ struct RegistryView: View {
     let onDelete: (Movement) -> Void
     let onImport: () -> Void
 
-    @State private var selection: String? = nil
+    @Binding var selection: String?
     @State private var pendingDelete: Movement? = nil
 
     private var deleteBinding: Binding<Bool> {
@@ -89,18 +89,23 @@ struct RegistryView: View {
     // MARK: Righe
 
     private var list: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(rows) { row in
-                    RegistryRow(row: row, selected: selection == row.id)
-                        .onTapGesture(count: 2) { onEdit(row.movement) }
-                        .onTapGesture { selection = row.id }
-                        .contextMenu {
-                            Button("Modifica…") { onEdit(row.movement) }
-                            Divider()
-                            Button("Elimina…", role: .destructive) { pendingDelete = row.movement }
-                        }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(rows) { row in
+                        RegistryRow(row: row, selected: selection == row.id)
+                            .onTapGesture(count: 2) { onEdit(row.movement) }
+                            .simultaneousGesture(TapGesture().onEnded { selection = row.id })
+                            .contextMenu {
+                                Button("Modifica…") { onEdit(row.movement) }
+                                Divider()
+                                Button("Elimina…", role: .destructive) { pendingDelete = row.movement }
+                            }
+                    }
                 }
+            }
+            .onChange(of: selection) { _, id in
+                if let id { proxy.scrollTo(id) }
             }
         }
     }

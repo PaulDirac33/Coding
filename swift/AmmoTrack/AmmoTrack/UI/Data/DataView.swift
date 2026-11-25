@@ -15,7 +15,8 @@ struct EditorTarget: Identifiable {
 
 struct DataView: View {
     @EnvironmentObject var store: DataStore
-
+    /// true quando questa è la pagina visibile: solo allora ascolta i tasti.
+    let isActive: Bool
     enum Mode: String, CaseIterable, Identifiable {
         case registry
         case charts
@@ -29,11 +30,17 @@ struct DataView: View {
     @State var caliberFilter: CaliberFilter = .all
     @State var period: Period = .all
     @State var weaponFilter: String? = nil
+    @State var entryFilter: Provenance? = nil     // nil = nessuno · .reloaded = solo ricariche · .bought = solo acquisti
     @State var editing: EditorTarget? = nil
     @State var showImport = false
     @State var exporting = false
     @State var exportDocument = CSVDocument(text: "")
     @State var actionError: String? = nil
+    @State var selection: String? = nil        // riga selezionata nel registro (clic o frecce)
+    @State var showWeaponMenu = false          // menù di vetro del filtro armi
+    @State var weaponButtonFrame: CGRect = .zero   // dove sta il pulsante (da lì si apre il menù)
+    @State var showActionsMenu = false              // menù di vetro delle azioni (nuovo, importa, esporta)
+    @State var actionsButtonFrame: CGRect = .zero   // dove sta il suo pulsante
 
     // MARK: Filtri
 
@@ -55,9 +62,13 @@ struct DataView: View {
     }
 
     var weaponFilterName: String {
-        guard let id = weaponFilter else { return "Tutte le armi" }
+        if let p = entryFilter { return p == .reloaded ? "Solo ricariche" : "Solo acquisti" }
+        guard let id = weaponFilter else { return "Filtro non attivo" }
         return store.config.weapon(id)?.name ?? "Arma eliminata"
     }
+
+    /// true se è attivo un qualunque filtro del menù (arma, solo ricariche, solo acquisti).
+    var isFilterActive: Bool { weaponFilter != nil || entryFilter != nil }
 
     /// Righe del registro dopo i filtri, dalla più recente.
     var filteredRows: [LedgerRow] {
@@ -66,6 +77,7 @@ struct DataView: View {
         let selected = store.ledger.rows.filter { r in
             if let cid, r.movement.caliberID != cid { return false }
             if let w = weaponFilter, r.movement.weaponID != w { return false }
+            if let p = entryFilter, !(r.movement.kind == .added && r.movement.provenance == p) { return false }
             if let since, r.movement.date < since { return false }
             return true
         }
@@ -84,9 +96,10 @@ struct DataView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .sheet(item: $editing) { target in
-            MovementEditor(original: target.movement)
-        }
+        .coordinateSpace(.named("dataPage"))
+        .overlay { editorOverlay }
+        .overlay { weaponMenuOverlay }
+        .overlay { actionsMenuOverlay }
         .sheet(isPresented: $showImport) {
             ImportChooserSheet()
         }
@@ -98,6 +111,12 @@ struct DataView: View {
                 actionError = failure.localizedDescription
             }
         }
+        // I tasti della pagina si fermano mentre l'editor o il menù delle armi sono aperti.
+        .dataShortcuts(isActive: isActive && editing == nil && !showWeaponMenu) { handleKey($0) }
+        .onChange(of: isActive) { _, active in
+            if !active { showWeaponMenu = false
+                showActionsMenu = false}
+        }
     }
 
     // MARK: Intestazione
@@ -105,7 +124,7 @@ struct DataView: View {
     var header: some View {
         HStack(spacing: 14) {
             GlassSegmented(options: Mode.allCases,
-                           selection: $mode,
+                           selection: $mode.animation(Self.slide),
                            segmentWidth: 56) { m, selected in
                 Image(systemName: m.symbol)
                     .font(.system(size: 15, weight: .semibold))
@@ -114,96 +133,67 @@ struct DataView: View {
             }
 
             GlassSegmented(options: caliberOptions,
-                           selection: $caliberFilter,
+                           selection: $caliberFilter.animation(Self.slide),
                            segmentWidth: 74) { f, selected in
                 glassLabel(filterTitle(f), selected: selected)
             }
 
             GlassSegmented(options: Period.allCases,
-                           selection: $period,
+                           selection: $period.animation(Self.slide),
                            segmentWidth: 66) { p, selected in
                 glassLabel(p.rawValue, selected: selected)
             }
-
-            if mode == .registry {
-                weaponMenu
-            }
-
             Spacer(minLength: 8)
 
             if mode == .registry {
-                actions
+                HStack(spacing: 14) {
+                    weaponMenu
+                    actionsMenu
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(height: 40)
     }
-
-    /// Filtro per arma (solo nel registro).
+    /// Filtro per arma (solo nel registro). Il menù di vetro è in DataView+Glass.swift.
     var weaponMenu: some View {
-        Menu {
-            Button("Tutte le armi") { weaponFilter = nil }
-            Divider()
-            ForEach(store.config.weapons) { w in
-                Button(w.isArchived ? "\(w.name) (archiviata)" : w.name) { weaponFilter = w.id }
-            }
+        Button {
+            withAnimation(Self.slide) { showWeaponMenu.toggle() }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "scope")
                 Text(weaponFilterName)
                     .lineLimit(1)
             }
-            .font(.system(size: 13, weight: weaponFilter == nil ? .medium : .semibold))
-            .foregroundStyle(weaponFilter == nil ? Color.white.opacity(0.68) : Color.white)
+            .font(.system(size: 13, weight: !isFilterActive ? .medium : .semibold))
+            .foregroundStyle(!isFilterActive ? Color.white.opacity(0.68) : Color.white)
             .padding(.horizontal, 14)
             .frame(height: 36)
             .glassCapsule(interactive: true)
+            .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
         .fixedSize()
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("dataPage")) } action: { weaponButtonFrame = $0 }
     }
 
-    var actions: some View {
-        HStack(spacing: 10) {
-            Text("\(numText(filteredRows.count)) movimenti")
-                .font(.caption)
-                .foregroundStyle(Palette.muted)
-            Button {
-                showImport = true
-            } label: {
-                Image(systemName: "square.and.arrow.down")
-                    .font(.system(size: 15, weight: .semibold))
-                    .offset(x: 0.495, y: -2.5)
-                    .frame(width: 22, height: 22)
-            }
-            .glassButton()
-            .buttonBorderShape(.capsule)
-            .glassHint("Importa da CSV")
-
-            Button {
-                exportCurrent()
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 15, weight: .semibold))
-                    .offset(x: 0.495, y: -2.5)
-                    .frame(width: 22, height: 22)
-            }
-            .glassButton()
-            .buttonBorderShape(.capsule)
-            .glassHint("Esporta in CSV")
-
-            Button {
-                editing = EditorTarget(movement: nil)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 22, height: 22)
-            }
-            .glassProminentButton()
-            .buttonBorderShape(.capsule)
-            .glassHint("Nuovo movimento", placement: .belowTrailing)
-        }
+/// Menù delle azioni (solo nel registro): nuovo movimento, importa, esporta. Il pannello è in DataView+Glass.swift.
+var actionsMenu: some View {
+    Button {
+        withAnimation(Self.slide) { showActionsMenu.toggle() }
+    } label: {
+        Text("#\(numText(filteredRows.count))")
+            .font(.system(size: 11, weight: .bold)
+            .monospacedDigit())
+            .foregroundStyle(Color.white)
+            .frame(width: 36, height: 36)
+            .glassCapsule(interactive: true)
+            .contentShape(Capsule())
     }
+    .buttonStyle(.plain)
+    .fixedSize()
+    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("dataPage")) } action: { actionsButtonFrame = $0 }
+    .glassHint("Azioni")
+}
 
     // MARK: Contenuto
 
@@ -213,7 +203,8 @@ struct DataView: View {
                 RegistryView(rows: filteredRows,
                              onEdit: { editing = EditorTarget(movement: $0) },
                              onDelete: { delete($0) },
-                             onImport: { showImport = true })
+                             onImport: { showImport = true },
+                             selection: $selection)
                     .transition(.opacity)
             } else {
                 ChartsView(filter: effectiveFilter, period: period)

@@ -1,0 +1,258 @@
+//
+//  DataView+Glass.swift
+//
+//  I due pannelli di vetro della pagina Dati:
+//  - l'editor del movimento (come l'editor delle armi: sfondo scuro, vetro, ombra, comparsa a molla);
+//  - il menù del filtro armi, che si apre sotto il pulsante (clic fuori o Esc lo chiudono).
+//
+
+import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
+
+extension DataView {
+
+    // MARK: Editor del movimento
+
+    var editorOverlay: some View {
+        GeometryReader { geo in
+            ZStack {
+                if let target = editing {
+                    Color.black.opacity(0.35)
+                        .transition(.opacity)
+                    MovementEditor(original: target.movement, onClose: { editing = nil })
+                        .id(target.id)
+                        .liquidGlass(cornerRadius: 26)
+                        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.45), radius: 30, y: 12)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .animation(Self.slide, value: editing?.id)
+        }
+        .allowsHitTesting(editing != nil)
+    }
+
+    // MARK: Menù del filtro armi
+
+    // MARK: Larghezza del menù
+
+    /// Testo mostrato da una voce del menù (stesso testo di GlassMenuRow).
+    private func weaponMenuTitle(_ w: Weapon) -> String {
+        w.isArchived ? "\(w.name) (archiviata)" : w.name
+    }
+
+    /// Larghezza del testo nel font delle voci (13 pt semibold: il caso più largo).
+    private func menuTextWidth(_ text: String) -> CGFloat {
+        #if os(macOS)
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        #else
+        return CGFloat(text.count) * 7.5      // stima, per un eventuale iOS
+        #endif
+    }
+
+    /// Voce più lunga + margine della voce (14 + 14) + margine del pannello (8 + 8) + un po' di respiro.
+    private var weaponPanelWidth: CGFloat {
+        let titles = ["Tutte le armi"] + store.config.weapons.map { weaponMenuTitle($0) }
+        let longest = titles.map { menuTextWidth($0) }.max() ?? 0
+        let breathing: CGFloat = 4                  // "poco più": alza o abbassa a gusto
+        return min(max(longest + 28 + 16 + breathing, 150), 320)
+    }
+
+    var weaponMenuOverlay: some View {
+        GeometryReader { geo in
+            // Il pannello parte dal bordo sinistro del pulsante, ma non esce dalla finestra.
+            let x = max(8, min(weaponButtonFrame.minX, geo.size.width - weaponPanelWidth - 16))
+            ZStack(alignment: .topLeading) {
+                if showWeaponMenu {
+                    // Clic fuori dal pannello: chiude.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeWeaponMenu() }
+                    // Esc chiude.
+                    Button("") { closeWeaponMenu() }
+                        .keyboardShortcut(.cancelAction)
+                        .opacity(0)
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
+                }
+                weaponPanel
+                    .scaleEffect(showWeaponMenu ? 1 : 0.92, anchor: .topLeading)
+                    .opacity(showWeaponMenu ? 1 : 0)
+                    .offset(x: x, y: weaponButtonFrame.maxY + 8)
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .animation(Self.slide, value: showWeaponMenu)
+        }
+        .allowsHitTesting(showWeaponMenu)
+    }
+
+    private var weaponPanel: some View {
+        let weapons = store.config.weapons
+        // Altezza naturale: 34 pt a voce, 9 pt a linea (1 + 4 + 4), 2 pt fra gli elementi, 8 pt di margine sopra e sotto.
+        let rows = weapons.count + 3
+        let dividers = weapons.isEmpty ? 1 : 2
+        let children = rows + dividers
+        let natural = CGFloat(rows) * 34 + CGFloat(dividers) * 9 + CGFloat(children - 1) * 2 + 16
+
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                GlassMenuRow(title: "Filtro non attivo",
+                             selected: weaponFilter == nil && entryFilter == nil) {
+                    chooseFilter(weapon: nil, entries: nil)
+                }
+                menuDivider
+                GlassMenuRow(title: "Solo ricariche", selected: entryFilter == .reloaded) {
+                    chooseFilter(weapon: nil, entries: .reloaded)
+                }
+                GlassMenuRow(title: "Solo acquisti", selected: entryFilter == .bought) {
+                    chooseFilter(weapon: nil, entries: .bought)
+                }
+                if !weapons.isEmpty {
+                    menuDivider
+                }
+                ForEach(weapons) { w in
+                    GlassMenuRow(title: weaponMenuTitle(w), selected: weaponFilter == w.id) {
+                        chooseFilter(weapon: w.id, entries: nil)
+                    }
+                }
+            }
+            .padding(8)
+        }
+        .scrollIndicators(.never)
+        .frame(width: weaponPanelWidth, height: min(natural, 360))
+        .liquidGlass(cornerRadius: 22)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: Color.black.opacity(0.45), radius: 24, y: 10)
+    }
+
+    private var menuDivider: some View {
+        Rectangle()
+            .fill(Palette.line)
+            .frame(height: 1)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+    }
+
+    private func chooseFilter(weapon: String?, entries: Provenance?) {
+        withAnimation(Self.slide) {
+            weaponFilter = weapon
+            entryFilter = entries
+            showWeaponMenu = false
+        }
+    }
+
+    private func closeWeaponMenu() {
+        withAnimation(Self.slide) { showWeaponMenu = false }
+    }
+    // MARK: Menù delle azioni
+
+    /// Le voci del menù: titolo, simbolo e che cosa fanno.
+    private var actionItems: [(title: String, symbol: String, run: () -> Void)] {
+        [("Nuovo movimento", "plus", { editing = EditorTarget(movement: nil) }),
+         ("Importa da CSV", "square.and.arrow.down", { showImport = true }),
+         ("Esporta in CSV", "square.and.arrow.up", { exportCurrent() })]
+    }
+
+    /// Voce più lunga + simbolo (16 + 8) + margine della voce (28) + margine del pannello (16) + respiro.
+    private var actionsPanelWidth: CGFloat {
+        let longest = actionItems.map { menuTextWidth($0.title) }.max() ?? 0
+        return max(longest + 84, 150)
+    }
+
+    var actionsMenuOverlay: some View {
+        GeometryReader { geo in
+            let width = actionsPanelWidth
+            let x = max(8, min(actionsButtonFrame.minX, geo.size.width - width - 16))
+            ZStack(alignment: .topLeading) {
+                if showActionsMenu {
+                    // Clic fuori dal pannello: chiude.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeActionsMenu() }
+                    // Esc chiude.
+                    Button("") { closeActionsMenu() }
+                        .keyboardShortcut(.cancelAction)
+                        .opacity(0)
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
+                }
+                actionsPanel
+                    .scaleEffect(showActionsMenu ? 1 : 0.92, anchor: .topLeading)
+                    .opacity(showActionsMenu ? 1 : 0)
+                    .offset(x: x, y: actionsButtonFrame.maxY + 8)
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .animation(Self.slide, value: showActionsMenu)
+        }
+        .allowsHitTesting(showActionsMenu)
+    }
+
+    private var actionsPanel: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(actionItems.indices, id: \.self) { i in
+                let item = actionItems[i]
+                GlassMenuRow(title: item.title, symbol: item.symbol, selected: false) {
+                    closeActionsMenu()
+                    item.run()
+                }
+            }
+        }
+        .padding(8)
+        .frame(width: actionsPanelWidth)
+        .liquidGlass(cornerRadius: 22)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: Color.black.opacity(0.45), radius: 24, y: 10)
+    }
+
+    private func closeActionsMenu() {
+        withAnimation(Self.slide) { showActionsMenu = false }
+    }
+}
+
+// MARK: - Voce del menù di vetro
+
+/// Una voce: a riposo trasparente, al passaggio del mouse si illumina; quella scelta ha la capsula chiara
+/// del selettore (la stessa "lente" a riposo di GlassSegmented e del banner armi).
+private struct GlassMenuRow: View {
+    let title: String
+    var symbol: String? = nil
+    let selected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    if let symbol {
+                        Image(systemName: symbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 16)
+                    }
+                    Text(title)
+                        .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 34)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(selected ? 0.14 : (hovering ? 0.08 : 0)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(selected ? 0.18 : 0), lineWidth: 1))
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
