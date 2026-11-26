@@ -4,7 +4,7 @@
 //  I saldi attuali per calibro (ricaricate, comprate, totale) rispetto alle cartucce denunciate,
 //  più il totale generale: sono i numeri che prima guardavi nel foglio Numbers.
 //  Ricaricate e comprate si riconoscono dai simboli del selettore: ingranaggio oro, carrello rosso.
-//  Fermando il mouse sul simbolo, dopo 1 secondo compare il nome (suggerimento sfumato, senza bordo).
+//  Toccando il simbolo compare per un istante il nome (suggerimento sfumato, senza bordo).
 //
 
 import SwiftUI
@@ -20,7 +20,7 @@ struct BalanceCard: View {
     private let figureWidth: CGFloat = 54     // simbolo + numero (fino a 1.000)
     private let usageWidth: CGFloat = 80      // "1.000 / 1.000"
     private let rowSpacing: CGFloat = 8
-    private let hintDelay: Double = 1.0       // secondi di attesa prima del suggerimento sul simbolo
+    private let hintDuration: Double = 1.8    // secondi in cui resta visibile il nome dopo un tocco sul simbolo
 
     var body: some View {
         VStack(spacing: 10) {
@@ -40,7 +40,7 @@ struct BalanceCard: View {
     /// Simbolo della provenienza (con il suggerimento) e numero.
     private func figure(_ p: Provenance, _ value: Int) -> some View {
         HStack(spacing: 5) {
-            SymbolHint(provenance: p, delay: hintDelay)
+            SymbolHint(provenance: p, duration: hintDuration)
             Text(numText(value))
                 .font(.system(size: 12, weight: .semibold).monospacedDigit())
                 .foregroundStyle(value < 0 ? Palette.danger : Color.white)
@@ -108,12 +108,11 @@ struct BalanceCard: View {
 
 // MARK: - Simbolo con suggerimento
 
-/// Il simbolo (ingranaggio o carrello). Se il mouse resta sopra per `delay` secondi compare il nome
-/// sopra di esso, con una dissolvenza: capsula scura, ombra morbida, nessun bordo.
-/// Se il mouse esce prima, non compare nulla.
+/// Il simbolo (ingranaggio o carrello). Toccandolo compare il nome sopra di esso, con una dissolvenza:
+/// capsula scura, ombra morbida, nessun bordo. Dopo `duration` secondi sparisce da solo.
 private struct SymbolHint: View {
     let provenance: Provenance
-    let delay: Double
+    let duration: Double
 
     @State private var shown = false
     @State private var pending: Task<Void, Never>? = nil
@@ -124,15 +123,12 @@ private struct SymbolHint: View {
             .foregroundStyle(provenance.color)
             .frame(width: 14)
             .contentShape(Rectangle())
-            .onHover { inside in
+            .onTapGesture {
                 pending?.cancel()
-                if inside {
-                    pending = Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(delay))
-                        guard !Task.isCancelled else { return }
-                        withAnimation(.easeOut(duration: 0.3)) { shown = true }
-                    }
-                } else {
+                withAnimation(.easeOut(duration: 0.2)) { shown = true }
+                pending = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(duration))
+                    guard !Task.isCancelled else { return }
                     withAnimation(.easeOut(duration: 0.15)) { shown = false }
                 }
             }
@@ -140,18 +136,6 @@ private struct SymbolHint: View {
                 pending?.cancel()
                 shown = false
             }
-            #if os(iOS)
-            .onTapGesture {
-                // Senza mouse non c'è il "fermarsi sopra": un tocco mostra il nome per un istante.
-                pending?.cancel()
-                withAnimation(.easeOut(duration: 0.2)) { shown = true }
-                pending = Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(1.8))
-                    guard !Task.isCancelled else { return }
-                    withAnimation(.easeOut(duration: 0.15)) { shown = false }
-                }
-            }
-            #endif
             .overlay(alignment: .top) { hint }
     }
 

@@ -1,28 +1,27 @@
 //
 //  AppearanceSettings.swift
 //
-//  Aspetto della finestra (come nell'altra app): traslucida con sfocatura del desktop, oppure sfondo pieno.
+//  Aspetto e comportamento che si possono regolare da qui.
 //
 
 import SwiftUI
-#if os(macOS)
-import AppKit
-#endif
 
-/// true  = finestra traslucida: dietro la app si vede il desktop, sfocato (le finestre sotto non si leggono).
-/// false = sfondo pieno sfumato.
-/// Su iPhone e iPad non c'è il desktop da sfocare dietro la finestra: lo sfondo è sempre pieno.
-#if os(macOS)
-let translucentWindow = true
-#else
-let translucentWindow = false
-#endif
+enum BackgroundStyle {
+    case black          // nero pieno
+    case camouflage     // mimetica scura (il vetro ci rifrange dentro)
+}
 
-/// Quanto è "pieno" il colore scuro sopra la sfocatura (0 = quasi trasparente, 1 = opaco).
-/// Se vuoi vedere più desktop abbassalo, se vuoi più contrasto alzalo.
-let backgroundTint: Double = 0.66
+/// Sfondo dell'app: `.black` oppure `.camouflage`.
+let appBackgroundStyle: BackgroundStyle = .camouflage
 
-#if os(macOS)
-/// Tipo di sfocatura dietro la finestra. Alternative: .underWindowBackground, .fullScreenUI, .sidebar, .popover
-let windowMaterial: NSVisualEffectView.Material = .hudWindow
-#endif
+enum EntryKeyboardStyle {
+    case custom         // le cifre con lo zero largo e il cancella subito a destra, senza casella vuota
+    case system         // la tastiera numerica di sistema, identica a quella degli editor
+}
+
+/// La tastiera della pagina Inserimento. Compare solo toccando la casella.
+let entryKeyboardStyle: EntryKeyboardStyle = .custom
+
+/// Il banner armi si apre con la trasformazione del vetro (true) oppure con una dissolvenza (false, più leggera:
+/// è quella che non scatta). Metti true solo se vuoi riprovare la trasformazione.
+let weaponPickerMorphs = false

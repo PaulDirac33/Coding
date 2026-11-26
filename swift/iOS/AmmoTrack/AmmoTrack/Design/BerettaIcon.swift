@@ -455,26 +455,98 @@ fileprivate enum Beretta92 {
 
     static var indicatorDot: Path { disc(267, 150, 9) }
 
-    // Logo (medaglione con il tridente e la scritta P. BERETTA ad arco)
-    static var logoOuter: Path { disc(274, 452, 63) }
-    static var logoInner: Path { disc(274, 452, 54) }
-    static var trident: Path {
+    // Logo: medaglione con il tridente e la scritta P. BERETTA, ricalcato sulla foto.
+    static var logoRim: Path { disc(273, 453, 63.5) }
+    static var logoGroove: Path { disc(273, 453, 58.5) }
+
+    /// Una lancia del tridente: punta di freccia, asta e barbe in fondo.
+    private static func prong(tip: CGPoint, dir: CGPoint, length: CGFloat) -> Path {
+        func q(_ s: CGFloat, _ w: CGFloat) -> CGPoint {
+            CGPoint(x: tip.x + dir.x * s + dir.y * w, y: tip.y + dir.y * s - dir.x * w)
+        }
+        var side: [(CGFloat, CGFloat)] = [(9, 5.0), (10.5, 3.2), (length - 13, 3.2)]
+        var s = length - 13
+        for _ in 0..<3 {
+            side.append((s + 1.0, 6.4))
+            side.append((s + 3.2, 3.2))
+            s += 4.3
+        }
+        var path = Path()
+        path.move(to: q(0, 0))
+        for (a, w) in side { path.addLine(to: q(a, w)) }
+        path.addLine(to: q(length + 1.5, 0))
+        for (a, w) in side.reversed() { path.addLine(to: q(a, -w)) }
+        path.closeSubpath()
+        return path
+    }
+
+    static var prongs: Path {
         build { p in
-            for dx in [CGFloat(-21), 0, 21] {
-                let x = 274 + dx
-                p.mv(x, 460); p.ln(x, 416)
-                p.mv(x - 7, 428); p.ln(x, 411); p.ln(x + 7, 428)
-            }
-            p.mv(253, 436)
-            p.cv(253, 468, 295, 468, 295, 436)
+            p.addPath(prong(tip: CGPoint(x: 260.0, y: 410.7), dir: CGPoint(x: -0.241, y: 0.970), length: 50.1))
+            p.addPath(prong(tip: CGPoint(x: 282.9, y: 410.0), dir: CGPoint(x: -0.254, y: 0.968), length: 59.0))
+            p.addPath(prong(tip: CGPoint(x: 300.7, y: 421.4), dir: CGPoint(x: -0.207, y: 0.979), length: 51.8))
         }
     }
-    static var logoText: Path {
+
+    /// Arco di ellisse (angoli in gradi, y verso il basso).
+    private static func arc(_ p: inout Path, _ cx: CGFloat, _ cy: CGFloat, _ rx: CGFloat, _ ry: CGFloat,
+                            from: Double, to: Double) {
+        let steps = 28
+        for i in 0...steps {
+            let a = (from + (to - from) * Double(i) / Double(steps)) * Double.pi / 180
+            let pt = CGPoint(x: cx + rx * CGFloat(cos(a)), y: cy + ry * CGFloat(sin(a)))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+    }
+
+    /// Gli anelli aperti attorno alle due lance laterali e l'anello in basso.
+    static var tridentRings: Path {
         build { p in
-            for i in 0...20 {
-                let a = (150 - 6.0 * Double(i)) * Double.pi / 180
-                let pt = CGPoint(x: 274 + 45 * CGFloat(cos(a)), y: 452 + 45 * CGFloat(sin(a)))
-                if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+            arc(&p, 252.6, 438.1, 13.1, 12.6, from: 265, to: 134)
+            arc(&p, 252.6, 438.1, 13.1, 12.6, from: -38, to: 68)
+            arc(&p, 294.3, 450.4, 13.9, 13.7, from: 255, to: 144)
+            arc(&p, 294.3, 450.4, 13.9, 13.7, from: -55, to: 82)
+            arc(&p, 267.9, 465.7, 14.6, 13.6, from: 300, to: 615)
+        }
+    }
+
+    private static func glyph(_ c: Character) -> [[(CGFloat, CGFloat)]] {
+        switch c {
+        case "P": return [[(0, 1), (0, 0), (0.9, 0), (0.9, 0.5), (0, 0.5)]]
+        case "B": return [[(0, 1), (0, 0), (0.85, 0), (0.85, 0.5), (0, 0.5)],
+                          [(0.85, 0.5), (0.95, 0.5), (0.95, 1), (0, 1)]]
+        case "E": return [[(0.9, 0), (0, 0), (0, 1), (0.9, 1)], [(0, 0.5), (0.7, 0.5)]]
+        case "R": return [[(0, 1), (0, 0), (0.9, 0), (0.9, 0.5), (0, 0.5)], [(0.4, 0.5), (0.95, 1)]]
+        case "T": return [[(0, 0), (1, 0)], [(0.5, 0), (0.5, 1)]]
+        case "A": return [[(0, 1), (0.5, 0), (1, 1)], [(0.2, 0.65), (0.8, 0.65)]]
+        default: return []
+        }
+    }
+
+    /// "P. BERETTA" ad arco lungo il bordo basso del medaglione, con le cime delle lettere verso il centro.
+    static var logoLetters: Path {
+        build { p in
+            let letters: [(Character, Double)] = [("P", -71), (".", -66), ("B", -52), ("E", -33), ("R", -19),
+                                                  ("E", -4), ("T", 11), ("T", 25), ("A", 43)]
+            let radius: CGFloat = 42, w: CGFloat = 7, h: CGFloat = 9
+            for (ch, deg) in letters {
+                let f = deg * Double.pi / 180
+                let sn = CGFloat(sin(f)), cs = CGFloat(cos(f))
+                let c = CGPoint(x: 273 + radius * sn, y: 453 + radius * cs)
+                func at(_ gx: CGFloat, _ gy: CGFloat) -> CGPoint {
+                    CGPoint(x: c.x + (gx - 0.5) * w * cs + (0.5 - gy) * h * (-sn),
+                            y: c.y + (gx - 0.5) * w * (-sn) + (0.5 - gy) * h * (-cs))
+                }
+                if ch == "." {
+                    let d = at(0.5, 0.92)
+                    p.addEllipse(in: CGRect(x: d.x - 1.5, y: d.y - 1.5, width: 3, height: 3))
+                    continue
+                }
+                for line in glyph(ch) {
+                    for (i, g) in line.enumerated() {
+                        if i == 0 { p.move(to: at(g.0, g.1)) } else { p.addLine(to: at(g.0, g.1)) }
+                    }
+                }
             }
         }
     }
@@ -722,6 +794,12 @@ struct BerettaIcon: View {
             }
         }
     }
+    /// La guancetta con un buco dove sta il medaglione (even-odd).
+    private var checkerClip: Path {
+        var cut = place(Beretta92.panel)
+        cut.addPath(place(Beretta92.logoRim))
+        return cut
+    }
 
     private var checkering: some View {
         let spacing = max(15, 2.6 / unit)
@@ -729,17 +807,23 @@ struct BerettaIcon: View {
             trace(Beretta92.checker(spacing: spacing, rising: true), Color.black.opacity(0.55), 1.7, cap: .butt)
             trace(Beretta92.checker(spacing: spacing, rising: false), Color.white.opacity(0.20), 1.7, cap: .butt)
         }
-        .mask { place(Beretta92.panel).fill(Color.black) }
+        .mask { checkerClip.fill(Color.black, style: FillStyle(eoFill: true)) }
     }
 
     private var logo: some View {
         ZStack {
-            ink(Beretta92.logoOuter, Color.white.opacity(0.10))
-            trace(Beretta92.logoOuter, Color.white.opacity(0.28), 3)
-            trace(Beretta92.logoInner, Color.black.opacity(0.55), 2.4)
-            trace(Beretta92.trident, Color.white.opacity(0.34), 3.6)
-            trace(Beretta92.logoText, Color.white.opacity(0.30), 7,
-                  dash: [6, 3, 4, 3, 7, 3, 5, 3, 6], cap: .butt)
+            // Bordo rialzato, gola scura e fondo piatto (più chiaro) del medaglione.
+            ink(Beretta92.logoRim, Color.white.opacity(0.10))
+            trace(Beretta92.logoRim, Color.white.opacity(0.30), 2.6)
+            ink(Beretta92.logoGroove, Color.white.opacity(0.13))
+            trace(Beretta92.logoGroove, Color.black.opacity(0.55), 2.4)
+            // Il tridente in rilievo: anelli sotto, lance sopra.
+            trace(Beretta92.tridentRings, Color.black.opacity(0.62), 3.4)
+            trace(Beretta92.tridentRings, Color.white.opacity(0.26), 1.2)
+            ink(Beretta92.prongs, Color.white.opacity(0.28))
+            trace(Beretta92.prongs, Color.black.opacity(0.62), 1.8)
+            // Scritta.
+            trace(Beretta92.logoLetters, Color.black.opacity(0.58), 3)
         }
     }
 

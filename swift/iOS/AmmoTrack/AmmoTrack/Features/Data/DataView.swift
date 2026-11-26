@@ -2,16 +2,22 @@
 //  DataView.swift
 //
 //  Pagina "Dati": il registro (come il foglio Numbers, ma con i saldi calcolati) e i grafici.
-//  I filtri (calibro, periodo) valgono per entrambi; l'esportazione CSV segue il filtro attivo.
+//  I filtri (calibro, periodo, arma) valgono per entrambi; l'esportazione CSV segue il filtro attivo.
+//
+//  I controlli stanno IN BASSO, sopra la barra delle pagine, a portata di pollice:
+//  Registro/Grafici · calibro · periodo · filtro armi, con a destra il contatore e il menù (nuovo, importa, esporta).
+//  Selettori e menù sono quelli di sistema: Liquid Glass vero.
 //
 
 import SwiftUI
 import UniformTypeIdentifiers
+
 /// Che cosa apre il foglio di modifica: un movimento esistente o uno nuovo (movement == nil).
 struct EditorTarget: Identifiable {
     let id = UUID()
     let movement: Movement?
 }
+
 
 struct DataView: View {
     @EnvironmentObject var store: DataStore
@@ -21,7 +27,7 @@ struct DataView: View {
         case charts
 
         var id: String { rawValue }
-        var symbol: String { self == .registry ? "tablecells" : "chart.xyaxis.line" }
+        var symbol: String { self == .registry ? "tablecells" : "chart.bar.xaxis.ascending" }
         var title: String { self == .registry ? "Registro" : "Grafici" }
     }
 
@@ -29,12 +35,13 @@ struct DataView: View {
     @State var caliberFilter: CaliberFilter = .all
     @State var period: Period = .all
     @State var weaponFilter: String? = nil
+    @State var entryFilter: Provenance? = nil     // nil = nessuno · .reloaded = solo ricariche · .bought = solo acquisti
     @State var editing: EditorTarget? = nil
     @State var showImport = false
     @State var exporting = false
     @State var exportDocument = CSVDocument(text: "")
     @State var actionError: String? = nil
-    @State var pageWidth: CGFloat = 1180     // larghezza della pagina (misurata): sotto i 600 pt è un iPhone in verticale
+    @State var selection: String? = nil        // riga selezionata nel registro (tocco)
 
     // MARK: Filtri
 
@@ -56,9 +63,13 @@ struct DataView: View {
     }
 
     var weaponFilterName: String {
-        guard let id = weaponFilter else { return "Tutte le armi" }
+        if let p = entryFilter { return p == .reloaded ? "Solo ricariche" : "Solo acquisti" }
+        guard let id = weaponFilter else { return "Filtro non attivo" }
         return store.config.weapon(id)?.name ?? "Arma eliminata"
     }
+
+    /// true se è attivo un qualunque filtro del menù (arma, solo ricariche, solo acquisti).
+    var isFilterActive: Bool { weaponFilter != nil || entryFilter != nil }
 
     /// Righe del registro dopo i filtri, dalla più recente.
     var filteredRows: [LedgerRow] {
@@ -67,6 +78,7 @@ struct DataView: View {
         let selected = store.ledger.rows.filter { r in
             if let cid, r.movement.caliberID != cid { return false }
             if let w = weaponFilter, r.movement.weaponID != w { return false }
+            if let p = entryFilter, !(r.movement.kind == .added && r.movement.provenance == p) { return false }
             if let since, r.movement.date < since { return false }
             return true
         }
@@ -76,20 +88,22 @@ struct DataView: View {
     // MARK: Corpo
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
+        VStack(alignment: .leading, spacing: 10) {
             ErrorLine(text: actionError)
             content
         }
-        .padding(.horizontal, pageWidth < Adaptive.phoneWidth ? 16 : 24)
-        .padding(.bottom, 16)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
+        .safeAreaInset(edge: .bottom, spacing: 10) {
+            bottomControls
+        }
         .sheet(item: $editing) { target in
-            MovementEditor(original: target.movement)
+            MovementEditor(original: target.movement, onClose: { editing = nil })
+                .id(target.id)
         }
         .sheet(isPresented: $showImport) {
-            ImportSheet()
+            ImportChooserSheet()
         }
         .fileExporter(isPresented: $exporting,
                       document: exportDocument,
@@ -101,138 +115,157 @@ struct DataView: View {
         }
     }
 
-    // MARK: Intestazione
+    // MARK: Controlli in basso
 
+    /// Registro / Grafici (selettore di sistema).
     var modeSelector: some View {
-        GlassSegmented(options: Mode.allCases,
-                       selection: $mode,
-                       segmentWidth: 56) { m, selected in
-            Image(systemName: m.symbol)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(selected ? Color.white : Color.white.opacity(0.68))
-                .accessibilityLabel(m.title)
+        Picker("Vista", selection: $mode) {
+            ForEach(Mode.allCases) { m in
+                Image(systemName: m.symbol)
+                    .tag(m)
+                    .accessibilityLabel(m.title)
+            }
         }
+        .pickerStyle(.segmented)
     }
 
+    /// Tutti · 9×21 · 22 LR …
     var caliberSelector: some View {
-        GlassSegmented(options: caliberOptions,
-                       selection: $caliberFilter,
-                       segmentWidth: 74) { f, selected in
-            glassLabel(filterTitle(f), selected: selected)
+        Picker("Calibro", selection: $caliberFilter) {
+            ForEach(caliberOptions, id: \.self) { f in
+                Text(filterTitle(f)).tag(f)
+            }
         }
+        .pickerStyle(.segmented)
     }
 
+    /// 3 mesi · 6 mesi · 1 anno · Tutto
     var periodSelector: some View {
-        GlassSegmented(options: Period.allCases,
-                       selection: $period,
-                       segmentWidth: 66) { p, selected in
-            glassLabel(p.rawValue, selected: selected)
-        }
-    }
-
-    /// Tutti i controlli su una riga (Mac e iPad in orizzontale): il layout originale.
-    var wideHeader: some View {
-        HStack(spacing: 14) {
-            modeSelector
-            caliberSelector
-            periodSelector
-
-            if mode == .registry {
-                weaponMenu
-            }
-
-            Spacer(minLength: 8)
-
-            if mode == .registry {
-                actions
+        Picker("Periodo", selection: $period) {
+            ForEach(Period.allCases) { p in
+                Text(p.rawValue).tag(p)
             }
         }
-        .frame(height: 40)
+        .pickerStyle(.segmented)
     }
 
-    /// iPhone e iPad in verticale: gli stessi controlli, che vanno a capo quando manca lo spazio.
-    var wrappedHeader: some View {
-        FlowLayout(spacing: 12, lineSpacing: 10) {
-            modeSelector
-            caliberSelector
-            periodSelector
+    var bottomControls: some View {
+        VStack(spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                // iPad: i tre selettori su una riga.
+                HStack(spacing: 12) {
+                    modeSelector
+                        .frame(width: 120)
+                    caliberSelector
+                        .frame(width: CGFloat(caliberOptions.count) * 92)
+                    periodSelector
+                        .frame(width: 300)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // iPhone: vista e calibro sulla prima riga, periodo sulla seconda.
+                VStack(spacing: 8) {
+                    HStack(spacing: 10) {
+                        modeSelector
+                            .frame(width: 112)
+                        caliberSelector
+                    }
+                    periodSelector
+                }
+            }
+
             if mode == .registry {
-                weaponMenu
-                actions
+                HStack(spacing: 10) {
+                    weaponMenu
+                    Spacer(minLength: 0)
+                    actionsMenu
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+        .animation(.easeOut(duration: 0.2), value: mode)
     }
 
-    @ViewBuilder
-    var header: some View {
-        #if os(iOS)
-        ViewThatFits(in: .horizontal) {
-            wideHeader
-            wrappedHeader
-        }
-        #else
-        wideHeader
-        #endif
-    }
-
-    /// Filtro per arma (solo nel registro).
+    /// Filtro per arma (solo nel registro): menù di sistema, che si apre verso l'alto.
     var weaponMenu: some View {
         Menu {
-            Button("Tutte le armi") { weaponFilter = nil }
+            filterItem("Filtro non attivo", selected: !isFilterActive) {
+                weaponFilter = nil
+                entryFilter = nil
+            }
             Divider()
-            ForEach(store.config.weapons) { w in
-                Button(w.isArchived ? "\(w.name) (archiviata)" : w.name) { weaponFilter = w.id }
+            filterItem("Solo ricariche", selected: entryFilter == .reloaded) {
+                weaponFilter = nil
+                entryFilter = .reloaded
+            }
+            filterItem("Solo acquisti", selected: entryFilter == .bought) {
+                weaponFilter = nil
+                entryFilter = .bought
+            }
+            if !store.config.weapons.isEmpty {
+                Divider()
+                ForEach(store.config.weapons) { w in
+                    filterItem(w.isArchived ? "\(w.name) (archiviata)" : w.name, selected: weaponFilter == w.id) {
+                        weaponFilter = w.id
+                        entryFilter = nil
+                    }
+                }
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "scope")
-                Text(weaponFilterName)
-                    .lineLimit(1)
-            }
-            .font(.system(size: 13, weight: weaponFilter == nil ? .medium : .semibold))
-            .foregroundStyle(weaponFilter == nil ? Color.white.opacity(0.68) : Color.white)
-            .padding(.horizontal, 14)
-            .frame(height: 36)
-            .glassCapsule(interactive: true)
+            Text(weaponFilterName)
+                .font(.system(size: 14, weight: isFilterActive ? .semibold : .medium))
+                .foregroundStyle(isFilterActive ? Color.white : Color.white.opacity(0.75))
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+                .glassCapsule()
+                .contentShape(Capsule())
         }
-        #if os(macOS)
-        .menuStyle(.borderlessButton)
-        #endif
         .menuIndicator(.hidden)
-        .fixedSize()
+        .menuOrder(.fixed)
     }
 
-    var actions: some View {
-        HStack(spacing: 10) {
-            Text("\(numText(filteredRows.count)) movimenti")
-                .font(.caption)
-                .foregroundStyle(Palette.muted)
-            Button {
-                showImport = true
-            } label: {
-                Image(systemName: "square.and.arrow.down")
-                    .frame(width: 22, height: 22)
+    private func filterItem(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if selected {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
             }
-            .help("Importa dal foglio Numbers (CSV)…")
-            .glassButton()
+        }
+    }
 
-            Button {
-                exportCurrent()
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .frame(width: 22, height: 22)
-            }
-            .help("Esporta in CSV quello che vedi (con i filtri attivi)")
-            .glassButton()
-
+    /// Il contatore delle righe è anche il menù delle azioni: nuovo movimento, importa, esporta.
+    var actionsMenu: some View {
+        Menu {
             Button {
                 editing = EditorTarget(movement: nil)
             } label: {
-                Label("Nuovo", systemImage: "plus")
+                Label("Nuovo movimento", systemImage: "plus")
             }
-            .glassProminentButton()
+            Button {
+                showImport = true
+            } label: {
+                Label("Importa da CSV", systemImage: "square.and.arrow.down")
+            }
+            Button {
+                exportCurrent()
+            } label: {
+                Label("Esporta in CSV", systemImage: "square.and.arrow.up")
+            }
+        } label: {
+            Text("#\(numText(filteredRows.count))")
+                .font(.system(size: 13, weight: .bold).monospacedDigit())
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 14)
+                .frame(minWidth: 44, minHeight: 40)
+                .glassCapsule()
+                .contentShape(Capsule())
         }
+        .menuIndicator(.hidden)
+        .menuOrder(.fixed)
+        .accessibilityLabel("Azioni")
     }
 
     // MARK: Contenuto
@@ -243,7 +276,8 @@ struct DataView: View {
                 RegistryView(rows: filteredRows,
                              onEdit: { editing = EditorTarget(movement: $0) },
                              onDelete: { delete($0) },
-                             onImport: { showImport = true })
+                             onImport: { showImport = true },
+                             selection: $selection)
                     .transition(.opacity)
             } else {
                 ChartsView(filter: effectiveFilter, period: period)
@@ -271,3 +305,4 @@ struct DataView: View {
         exporting = true
     }
 }
+

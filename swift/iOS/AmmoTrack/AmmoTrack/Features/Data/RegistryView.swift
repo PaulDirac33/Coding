@@ -24,7 +24,7 @@ struct RegistryView: View {
     let onDelete: (Movement) -> Void
     let onImport: () -> Void
 
-    @State private var selection: String? = nil
+    @Binding var selection: String?
     @State private var pendingDelete: Movement? = nil
 
     private var deleteBinding: Binding<Bool> {
@@ -44,7 +44,7 @@ struct RegistryView: View {
                 list
             }
         }
-        .scrollsBelowWidth(960)      // iPhone: la tabella resta larga come sul Mac e scorre di lato
+        .scrollsBelowWidth(960)      // iPhone: la tabella resta larga e scorre di lato
         .liquidGlass(cornerRadius: 22)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .confirmationDialog("Eliminare questo movimento?",
@@ -90,18 +90,23 @@ struct RegistryView: View {
     // MARK: Righe
 
     private var list: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(rows) { row in
-                    RegistryRow(row: row, selected: selection == row.id)
-                        .onTapGesture(count: 2) { onEdit(row.movement) }
-                        .onTapGesture { selection = row.id }
-                        .contextMenu {
-                            Button("Modifica…") { onEdit(row.movement) }
-                            Divider()
-                            Button("Elimina…", role: .destructive) { pendingDelete = row.movement }
-                        }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(rows) { row in
+                        RegistryRow(row: row, selected: selection == row.id)
+                            .onTapGesture(count: 2) { onEdit(row.movement) }
+                            .simultaneousGesture(TapGesture().onEnded { selection = row.id })
+                            .contextMenu {
+                                Button("Modifica…") { onEdit(row.movement) }
+                                Divider()
+                                Button("Elimina…", role: .destructive) { pendingDelete = row.movement }
+                            }
+                    }
                 }
+            }
+            .onChange(of: selection) { _, id in
+                if let id { proxy.scrollTo(id) }
             }
         }
     }
@@ -112,7 +117,7 @@ struct RegistryView: View {
         } description: {
             Text("Il registro è vuoto, oppure i filtri non trovano nulla.\nInserisci un movimento dalla pagina Inserimento oppure importa il foglio Numbers.")
         } actions: {
-            Button("Importa da Numbers…") { onImport() }
+            Button("Importa da CSV") { onImport() }
                 .glassProminentButton()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

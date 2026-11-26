@@ -73,7 +73,6 @@ struct ImportSheet: View {
                 .foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
-            #if os(iOS)
             // iPhone: il calibro e il pulsante del file vanno su due righe se non c'è posto.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
@@ -89,13 +88,6 @@ struct ImportSheet: View {
                     }
                 }
             }
-            #else
-            HStack(spacing: 12) {
-                caliberPicker
-                fileButton
-                fileLabel
-            }
-            #endif
 
             if let r = report {
                 reportView(r)
@@ -116,7 +108,7 @@ struct ImportSheet: View {
             }
         }
         .padding(22)
-        .sheetWidth(600)
+        .frame(maxWidth: .infinity)
         .scrollsOnTouch()
         .onAppear {
             if caliberID.isEmpty { caliberID = store.config.calibers.first?.id ?? "" }

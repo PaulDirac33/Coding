@@ -11,13 +11,15 @@ import UniformTypeIdentifiers
 
 struct WeaponEditor: View {
     @EnvironmentObject var store: DataStore
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
+    private func dismiss() { onClose() }
 
     let original: Weapon?
     private let weaponID: String
 
     @State private var name: String
     @State private var caliberID: String
+    @State private var qualification: WeaponQualification?
     @State private var serial: String
     @State private var notes: String
     @State private var newImage: Data? = nil
@@ -29,11 +31,13 @@ struct WeaponEditor: View {
     @State private var error: String? = nil
     @State private var confirmDelete = false
 
-    init(original: Weapon?) {
+    init(original: Weapon?, onClose: @escaping () -> Void) {
         self.original = original
+        self.onClose = onClose
         self.weaponID = original?.id ?? UUID().uuidString
         _name = State(initialValue: original?.name ?? "")
         _caliberID = State(initialValue: original?.caliberID ?? "")
+        _qualification = State(initialValue: original?.qualification)
         _serial = State(initialValue: original?.serial ?? "")
         _notes = State(initialValue: original?.notes ?? "")
     }
@@ -111,6 +115,12 @@ struct WeaponEditor: View {
                             .font(.caption)
                             .foregroundStyle(Palette.muted)
                     }
+                    Picker("Qualifica", selection: $qualification) {
+                        Text("Non indicata").tag(WeaponQualification?.none)
+                        ForEach(WeaponQualification.allCases) { q in
+                            Text(q.label).tag(WeaponQualification?.some(q))
+                        }
+                    }
                     TextField("Matricola", text: $serial)
                         .font(.body.monospacedDigit())
                     TextField("Note", text: $notes, axis: .vertical)
@@ -118,9 +128,7 @@ struct WeaponEditor: View {
                 }
             }
             .formStyle(.grouped)
-            #if os(iOS)
-            .buttonStyle(.borderless)
-            #endif
+            .buttonStyle(.borderless)        // nelle righe di un Form ogni pulsante deve avere il suo tocco
 
             ErrorLine(text: error)
                 .padding(.horizontal, 20)
@@ -142,7 +150,6 @@ struct WeaponEditor: View {
             }
             .padding(20)
         }
-        .sheetWidth(480)
         .onAppear {
             if caliberID.isEmpty { caliberID = store.config.calibers.first?.id ?? "" }
         }
@@ -193,6 +200,7 @@ struct WeaponEditor: View {
         var w = original ?? Weapon(id: weaponID, name: trimmedName, caliberID: caliberID)
         w.name = trimmedName
         w.caliberID = caliberID
+        w.qualification = qualification
         w.serial = serial.trimmingCharacters(in: .whitespacesAndNewlines)
         w.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
 

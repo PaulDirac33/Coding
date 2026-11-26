@@ -1,15 +1,12 @@
 //
 //  SettingsView.swift
 //
-//  Impostazioni (⌘,): cartella dei dati, cartucce denunciate (per calibro e totale), calibri, importazione.
+//  Impostazioni (quarta pagina della barra in basso): cartella dei dati, cartucce denunciate (per calibro e totale), calibri, importazione.
 //  Armi e matricole stanno nella terza pagina dell'app.
 //
 
 import SwiftUI
 import UniformTypeIdentifiers
-#if os(macOS)
-import AppKit
-#endif
 
 struct SettingsView: View {
     @EnvironmentObject var store: DataStore
@@ -29,10 +26,7 @@ struct SettingsView: View {
             safetySection
         }
         .formStyle(.grouped)
-        #if os(macOS)
-        .frame(width: 580, height: 680)
-        #endif
-        #if os(iOS)
+        .scrollContentBackground(.hidden)               // lascia vedere lo sfondo mimetico
         .buttonStyle(.borderless)                       // ogni pulsante nella sua riga ha il suo tocco
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
@@ -41,7 +35,6 @@ struct SettingsView: View {
                 Button("Fine") { dismissKeyboard() }
             }
         }
-        #endif
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             switch result {
             case .success(let url):
@@ -52,7 +45,7 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $showImport) {
-            ImportSheet()
+            ImportChooserSheet()
         }
         .onAppear { store.start() }
     }
@@ -68,17 +61,7 @@ struct SettingsView: View {
                     .truncationMode(.middle)
                     .textSelection(.enabled)
             }
-            HStack {
-                Button("Cambia cartella…") { choosingFolder = true }
-                #if os(macOS)
-                Button("Mostra nel Finder") {
-                    if let url = store.folderURL {
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
-                    }
-                }
-                .disabled(store.folderURL == nil)
-                #endif
-            }
+            Button("Cambia cartella…") { choosingFolder = true }
             if let m = store.message {
                 ErrorLine(text: m)
             }
@@ -199,7 +182,6 @@ struct SettingsView: View {
                           : "Elimina il calibro")
                 }
             }
-            #if os(iOS)
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Nuovo calibro (es. 9×19)", text: $newName)
                 HStack {
@@ -209,16 +191,6 @@ struct SettingsView: View {
                         .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            #else
-            HStack {
-                TextField("Nuovo calibro (es. 9×19)", text: $newName)
-                Toggle("Ricaricabile", isOn: $newReload)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                Button("Aggiungi") { addCaliber() }
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            #endif
             Text("Il 22 LR non si ricarica: lasciandolo non ricaricabile sparisce la scelta ricaricate/comprate.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -229,7 +201,7 @@ struct SettingsView: View {
 
     private var importSection: some View {
         Section("Importazione") {
-            Button("Importa dal foglio Numbers (CSV)…") { showImport = true }
+            Button("Importa da CSV") { showImport = true }
             Text("Dopo l'importazione puoi continuare solo con l'app: i saldi si ricalcolano dai movimenti. L'esportazione in CSV è nella pagina Dati.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

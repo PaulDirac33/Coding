@@ -27,6 +27,10 @@ enum Palette {
                      green: reloadedRGB.g + (boughtRGB.g - reloadedRGB.g) * k,
                      blue: reloadedRGB.b + (boughtRGB.b - reloadedRGB.b) * k)
     }
+    /// Verde militare, quello della mimetica ma più chiaro dello sfondo: pulsanti principali e icone attive.
+    static let militaryGreen = Color(red: 0.34, green: 0.43, blue: 0.25)
+    /// Lo stesso verde, più chiaro: tinta generale dell'app (barra delle pagine, interruttori, testi dei pulsanti).
+    static let militaryGreenLight = Color(red: 0.58, green: 0.72, blue: 0.42)
     static let warning = Color.orange
     static let danger = Color(red: 0.95, green: 0.36, blue: 0.36)
 }

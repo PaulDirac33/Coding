@@ -1,15 +1,10 @@
 //
 //  FolderAccess.swift
-//  AmmoTrack
 //
-//  Dove stanno i dati. La cartella (es. ~/Documents/ARMI, sincronizzata con iCloud Drive) si sceglie una volta
-//  e l'app se la ricorda con un "security-scoped bookmark": funziona con App Sandbox attiva (e su iOS)
-//  e con l'account Apple gratuito.
+//  Dove stanno i dati. La cartella (es. iCloud Drive ▸ Documenti ▸ ARMI) si sceglie una volta dall'app File
+//  e l'app se la ricorda con un "security-scoped bookmark": funziona con l'ID Apple gratuito, senza capability.
 //
-//  Senza App Sandbox, se non hai scelto nulla, usa direttamente ~/Documents/ARMI.
-//  Con App Sandbox compare la schermata "Scegli la cartella dei dati".
-//
-//  È l'UNICO punto che conosce il percorso: se in futuro cambia (iOS, iCloud container...) si cambia solo qui.
+//  È l'UNICO punto che conosce il percorso: se in futuro cambia (iCloud container...) si cambia solo qui.
 //
 
 import Foundation
@@ -17,70 +12,27 @@ import Foundation
 nonisolated enum FolderAccess {
 
     private static let bookmarkKey = "dataFolderBookmark"
-    private static let pathKey = "dataFolderPath"
 
-    /// true se l'app gira nella sandbox: ~/Documents/ARMI non è raggiungibile senza il consenso dell'utente.
-    static var isSandboxed: Bool {
-        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-    }
-
-    /// Cartella predefinita fuori dalla sandbox: ~/Documents/ARMI. Con la sandbox (o su iOS) è nil: va scelta.
-    static var defaultFolder: URL? {
-        #if os(macOS)
-        if isSandboxed { return nil }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents", isDirectory: true)
-            .appendingPathComponent("ARMI", isDirectory: true)
-        #else
-        return nil
-        #endif
-    }
-
-    private static var creationOptions: URL.BookmarkCreationOptions {
-        #if os(macOS)
-        return [.withSecurityScope]
-        #else
-        return []
-        #endif
-    }
-
-    private static var resolutionOptions: URL.BookmarkResolutionOptions {
-        #if os(macOS)
-        return [.withSecurityScope]
-        #else
-        return []
-        #endif
-    }
-
-    /// La cartella scelta in precedenza, già pronta all'uso (nil se non ce n'è).
+    /// La cartella scelta in precedenza, già pronta all'uso (nil se non ce n'è: va scelta).
     static func restore() -> URL? {
-        let defaults = UserDefaults.standard
-        if let data = defaults.data(forKey: bookmarkKey) {
-            var stale = false
-            if let url = try? URL(resolvingBookmarkData: data,
-                                  options: resolutionOptions,
-                                  relativeTo: nil,
-                                  bookmarkDataIsStale: &stale) {
-                _ = url.startAccessingSecurityScopedResource()
-                if stale { remember(url) }
-                return url
-            }
-        }
-        if let path = defaults.string(forKey: pathKey), FileManager.default.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path, isDirectory: true)
-        }
-        return nil
+        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return nil }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: data,
+                                 options: [],
+                                 relativeTo: nil,
+                                 bookmarkDataIsStale: &stale) else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        if stale { remember(url) }
+        return url
     }
 
     /// Ricorda la cartella scelta (e ne tiene aperto l'accesso per tutta la vita dell'app).
     static func remember(_ url: URL) {
         _ = url.startAccessingSecurityScopedResource()
-        let defaults = UserDefaults.standard
-        if let data = try? url.bookmarkData(options: creationOptions,
+        if let data = try? url.bookmarkData(options: [],
                                             includingResourceValuesForKeys: nil,
                                             relativeTo: nil) {
-            defaults.set(data, forKey: bookmarkKey)
+            UserDefaults.standard.set(data, forKey: bookmarkKey)
         }
-        defaults.set(url.path, forKey: pathKey)
     }
 }

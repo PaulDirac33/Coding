@@ -1,23 +1,17 @@
 //
-//  Adaptive.swift
+//  Layout.swift
 //
-//  Piccoli strumenti per adattare la disposizione allo schermo.
-//  Su Mac e su iPad in orizzontale l'interfaccia resta IDENTICA a quella originale;
-//  su iPhone e su iPad in verticale cambia solo la disposizione (i controlli vanno a capo,
-//  la tabella scorre di lato, i fogli prendono la larghezza dello schermo), mai lo stile.
+//  Piccoli strumenti di disposizione: controlli che vanno a capo quando manca lo spazio,
+//  contenuto che scorre di lato se è più largo dello schermo, tastiera numerica.
 //
 
 import SwiftUI
-
-enum Adaptive {
-    /// Sotto questa larghezza (in punti) la pagina è quella di un iPhone in verticale.
-    static let phoneWidth: CGFloat = 600
-}
+import UIKit
 
 // MARK: - Controlli che vanno a capo
 
 /// Dispone le viste in riga e va a capo quando manca lo spazio (come il "wrap" dei CSS).
-/// Serve alle barre dei filtri della pagina Dati, troppo larghe per un iPhone.
+/// Serve alla barra dei filtri della pagina Dati, troppo larga per un iPhone.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 12
     var lineSpacing: CGFloat = 10
@@ -84,47 +78,24 @@ struct ScrollsBelowWidth: ViewModifier {
     }
 }
 
-// MARK: - Modificatori di vista
-
 extension View {
-
-    /// Fogli (Modifica, Importa...): larghezza fissa su Mac, tutta quella del foglio su iPhone e iPad.
-    @ViewBuilder
-    func sheetWidth(_ width: CGFloat) -> some View {
-        #if os(macOS)
-        frame(width: width)
-        #else
-        frame(maxWidth: .infinity)
-        #endif
-    }
-
-    /// Larghezza fissa su Mac; su iPhone e iPad è solo un massimo (lo schermo può essere più stretto).
-    @ViewBuilder
-    func macFixedWidth(_ width: CGFloat) -> some View {
-        #if os(macOS)
-        frame(width: width)
-        #else
-        frame(maxWidth: width)
-        #endif
-    }
-
-    /// Su iPhone e iPad il contenuto scorre di lato se è più stretto di `minWidth`. Su Mac non fa nulla.
-    @ViewBuilder
+    /// Il contenuto scorre di lato se è più stretto di `minWidth`.
     func scrollsBelowWidth(_ minWidth: CGFloat) -> some View {
-        #if os(iOS)
         modifier(ScrollsBelowWidth(minWidth: minWidth))
-        #else
-        self
-        #endif
     }
 
-    /// Su iPhone e iPad il contenuto di un foglio scorre se non entra. Su Mac il foglio si adatta al contenuto.
-    @ViewBuilder
+    /// Il contenuto di un foglio scorre se non entra nello schermo.
     func scrollsOnTouch() -> some View {
-        #if os(iOS)
         ScrollView { self }
-        #else
-        self
-        #endif
     }
+
+    /// Tastiera numerica sui campi dei numeri. `signed`: con anche il segno meno (per le rettifiche).
+    func numericKeyboard(signed: Bool = false) -> some View {
+        keyboardType(signed ? .numbersAndPunctuation : .numberPad)
+    }
+}
+
+/// Chiude la tastiera a schermo.
+func dismissKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }

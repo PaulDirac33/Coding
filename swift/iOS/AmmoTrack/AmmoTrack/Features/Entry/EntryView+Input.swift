@@ -1,13 +1,14 @@
 //
 //  EntryView+Input.swift
 //
-//  EntryView: tastiera, registrazione del movimento, annulla.
+//  EntryView: tastiera di sistema, registrazione del movimento.
+//
+//  Le cifre arrivano dalla tastiera (DigitsInput.swift), che compare solo toccando la casella: qui si ripuliscono
+//  (solo cifre, niente zeri iniziali, al massimo 6) e si registra con ↑ (sparate) o ↓ (aggiunte).
+//  Dopo una registrazione la tastiera resta com'era: non compare e non scompare da sola.
 //
 
 import SwiftUI
-#if os(macOS)
-import AppKit
-#endif
 
 extension EntryView {
 
@@ -20,59 +21,27 @@ extension EntryView {
 
     func closePicker() {
         if pickerOpen {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { pickerOpen = false }
+            withAnimation(.smooth(duration: 0.28)) { pickerOpen = false }
         }
     }
-    /// ⌘D: apre il calendario della data. Se il banner armi è aperto, lo chiude prima.
-    func openCalendar() {
-        closePicker()
-        showCalendar = true
-    }
-    /// Sposta il giorno scelto nel calendario. Non si va oltre oggi (come il DatePicker, che arriva fino a Date()).
-    /// Arrivando a oggi, `day` torna nil, cioè «Oggi» con l'ora.
-    func moveCalendarDay(_ days: Int) {
-        let current = Cal.startOfDay(day ?? Date())
-        guard let moved = Cal.cal.date(byAdding: .day, value: days, to: current) else { return }
-        let target = min(moved, Cal.startOfDay(Date()))
-        day = Cal.cal.isDateInToday(target) ? nil : target
-    }
-    /// Manda un comando da tastiera al banner armi.
-    func sendPicker(_ key: PickerKey) {
-        pickerCommand = PickerCommand(id: pickerCommand.id + 1, key: key)
+    // MARK: Tastiera
+
+    /// Ripulisce quello che arriva dalla tastiera: solo cifre, niente zeri iniziali ("05" diventa "5"),
+    /// al massimo `maxLength` cifre. Se cambia qualcosa riscrive il campo.
+    func sanitizeInput(_ raw: String) {
+        var digits = raw.filter { $0.isASCII && $0.isWholeNumber }
+        if digits.contains(where: { $0 != "0" }) {
+            while digits.hasPrefix("0") { digits.removeFirst() }
+        } else if !digits.isEmpty {
+            digits = "0"                                   // solo zeri: ne resta uno
+        }
+        if digits.count > maxLength { digits = String(digits.prefix(maxLength)) }
+        if digits != raw { inputText = digits }
     }
 
-    // MARK: Cifre
-
-    /// Cambia il testo con la piccola animazione a molla (le cifre entrano/escono).
+    /// Svuota la casella.
     func setInput(_ s: String) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.62)) {
-            inputText = s
-        }
-    }
-
-    /// Cancella l'ultima cifra.
-    func deleteLast() {
-        if !inputText.isEmpty { setInput(String(inputText.dropLast())) }
-    }
-
-    /// Aggiunge una cifra. Restituisce false se il carattere non è una cifra (le cartucce sono intere: niente decimali).
-    func typeDigit(_ ch: Character) -> Bool {
-        guard ("0"..."9").contains(ch) else { return false }
-        var t = inputText
-        if t == "0" { t = "" }                       // niente zeri iniziali: "05" diventa "5"
-        guard t.count < maxLength else { return true }
-        t.append(ch)
-        setInput(t)
-        return true
-    }
-
-    /// Backspace può arrivare come tasto "delete", "forward delete" o come carattere di controllo
-    /// (0x7F, 0x08, 0xF728): li riconosco tutti.
-    func isBackspace(_ press: KeyPress) -> Bool {
-        if press.key == .delete || press.key == .deleteForward { return true }
-        return press.characters.unicodeScalars.contains {
-            $0.value == 0x7F || $0.value == 0x08 || $0.value == 0xF728
-        }
+        inputText = s
     }
 
     func setProvenance(_ p: Provenance) {
@@ -80,149 +49,6 @@ extension EntryView {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
             storedProvenance = p.rawValue
         }
-    }
-
-    // MARK: Tastiera
-
-    func handleKey(_ press: KeyPress) -> KeyPress.Result {
-        guard isActive, !showCalendar else { return .ignored }
-        // Lascio passare le scorciatoie di sistema (⌘C, ⌘Q, ...).
-        if press.modifiers.contains(.command) || press.modifiers.contains(.control) { return .ignored }
-
-        if press.key == .escape {
-            if pickerOpen { closePicker() } else { setInput("") }
-            return .handled
-        }
-        // Banner armi aperto: ↑ ↓ e invio sono del banner (li gestisce il monitor qui sotto).
-        // Questa è solo una rete di sicurezza: con il banner aperto non deve mai partire uno sparo.
-        if pickerOpen && (press.key == .upArrow || press.key == .downArrow || press.key == .return) {
-            return .handled
-        }
-
-        // Invio non registra (le azioni sono due: ↓ e ↑): ricordo come si fa.
-        if press.key == .return || press.characters == "\u{3}" {
-            if canCommit && press.phase == .down {
-                statusKind = .hint
-                statusText = target.weaponID == nil
-                    ? "Premi ↓ per aggiungere o ↑ per sparare."
-                    : "Premi ↑ per sparare."
-            }
-            return .handled
-        }
-
-        // Frecce: ↓ aggiunte, ↑ sparate, ←/→ provenienza. Partono solo alla pressione, non se tieni premuto.
-        let isArrow = press.key == .upArrow || press.key == .downArrow
-            || press.key == .leftArrow || press.key == .rightArrow
-        if isArrow {
-            if press.phase == .down {
-                if press.key == .upArrow {
-                    commit(.shot)
-                } else if press.key == .downArrow {
-                    commit(.added)
-                } else if press.key == .leftArrow {
-                    setProvenance(.reloaded)
-                } else {
-                    setProvenance(.bought)
-                }
-            }
-            return .handled
-        }
-
-        if isBackspace(press) {
-            deleteLast()
-            return .handled
-        }
-
-        var handled = false
-        for ch in press.characters where typeDigit(ch) { handled = true }
-        return handled ? .handled : .ignored
-    }
-
-    /// Monitor dei tasti a livello di finestra: agisce solo se questa è la pagina visibile e non stai
-    /// scrivendo in un campo di testo né hai un foglio aperto. Gestisce:
-    ///   ⌫ / ⌦   cancella l'ultima cifra (rete di sicurezza contro il "blip")
-    ///   ⌘↓       apre il banner armi
-    ///   a banner aperto: ↑ ↓ cambiano voce · ↩ sceglie · ⌘↩ assorbe/espande le armi del calibro · Esc chiude
-    func installKeyMonitor() {
-        #if os(macOS)
-        guard keyMonitor == nil else { return }
-        let gate = self.gate
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // 51 = backspace, 117 = cancella in avanti, 125 = ↓, 126 = ↑, 36 = invio, 76 = invio tastierino, 53 = Esc.
-            // Le frecce portano anche i flag "numericPad" e "function": tengo solo i modificatori veri.
-            let code = event.keyCode
-            let mods = event.modifierFlags.intersection([.command, .control, .option])
-            let consumed: Bool = MainActor.assumeIsolated {
-                guard gate.active else { return false }
-                // Calendario aperto: ← → un giorno, ↑ ↓ una settimana, ↩ ed Esc chiudono.
-                // Le combinazioni con ⌘/⌥/⌃ (e quindi ⌘↑ ⌘↓ del DatePicker) passano com'erano.
-                if showCalendar {
-                    guard mods.isEmpty else { return false }
-                    switch code {
-                    case 123: moveCalendarDay(-1); return true       // ←
-                    case 124: moveCalendarDay(1); return true        // →
-                    case 126: moveCalendarDay(-7); return true       // ↑ settimana prima
-                    case 125: moveCalendarDay(7); return true        // ↓ settimana dopo
-                    case 36, 76, 53:                                  // ↩, ↩ del tastierino, Esc
-                        if !event.isARepeat { showCalendar = false }
-                        return true
-                    default: return false
-                    }
-                }
-                if NSApp.keyWindow?.firstResponder is NSTextView { return false }
-                if NSApp.keyWindow?.attachedSheet != nil { return false }
-
-                // Cancellazione
-                if (code == 51 || code == 117) && mods.isEmpty {
-                    deleteLast()
-                    return true
-                }
-
-                // ⌘↓: apre il banner armi (a banner già aperto non fa nulla)
-                if code == 125 && mods == .command {
-                    if !event.isARepeat { sendPicker(.open) }
-                    return true
-                }
-
-                // Da qui in poi solo a banner aperto
-                guard pickerOpen else { return false }
-
-                if mods.isEmpty {
-                    switch code {
-                    case 126:                       // ↑
-                        sendPicker(.up)
-                        return true
-                    case 125:                       // ↓
-                        sendPicker(.down)
-                        return true
-                    case 36, 76:                    // ↩
-                        if !event.isARepeat { sendPicker(.confirm) }
-                        return true
-                    case 53:                        // Esc
-                        closePicker()
-                        return true
-                    default:
-                        return false
-                    }
-                }
-                if mods == .command && (code == 36 || code == 76) {      // ⌘↩
-                    if !event.isARepeat { sendPicker(.toggle) }
-                    return true
-                }
-                return false
-            }
-            return consumed ? nil : event
-        }
-        #endif
-    }
-
-    func removeKeyMonitor() {
-        #if os(macOS)
-        if let m = keyMonitor {
-            NSEvent.removeMonitor(m)
-            keyMonitor = nil
-        }
-        #endif
     }
 
     // MARK: Registrazione
@@ -249,11 +75,7 @@ extension EntryView {
         guard let q = quantity else { return }
         let t = target
         guard !t.caliberID.isEmpty else {
-            #if os(macOS)
-            fail("Nessun calibro configurato: aggiungilo dalle Impostazioni (⌘,).")
-            #else
-            fail("Nessun calibro configurato: aggiungilo dalle Impostazioni (menu «…» in alto).")
-            #endif
+            fail("Nessun calibro configurato: aggiungilo dalla pagina Impostazioni.")
             return
         }
         if kind == .added && t.weaponID != nil {
@@ -290,7 +112,6 @@ extension EntryView {
             statusKind = .warning
             statusText = w
         }
-        inputFocused = true
     }
 
     /// Avvisi (non bloccanti) dopo un inserimento: saldo negativo o limite superato.

@@ -59,7 +59,7 @@ nonisolated enum MovementCSV {
 
     // MARK: Lettura
 
-    private static func parseKind(_ s: String) -> (kind: MovementKind, implied: Provenance?)? {
+    static func parseKind(_ s: String) -> (kind: MovementKind, implied: Provenance?)? {
         switch s {
         case "iniziale", "saldo iniziale", "saldo", "opening": return (.opening, nil)
         case "aggiunta", "aggiunte", "entrata", "add", "added": return (.added, nil)
@@ -71,7 +71,7 @@ nonisolated enum MovementCSV {
         }
     }
 
-    private static func parseProvenance(_ s: String) -> Provenance? {
+    static func parseProvenance(_ s: String) -> Provenance? {
         switch s {
         case "ricaricate", "ricaricata", "ricarica", "r": return .reloaded
         case "comprate", "comprata", "acquistate", "acquistata", "acquisto", "c": return .bought
@@ -183,6 +183,13 @@ nonisolated enum MovementCSV {
     }
 
     // MARK: Esportazione leggibile (con i saldi, per Numbers/Excel)
+    /// Le matricole fatte solo di cifre e con lo zero iniziale ("0001") vengono scritte come testo
+    /// (="0001"), così il foglio di calcolo non le trasforma nel numero 1.
+    /// Matricole con lettere o che non iniziano per 0 restano com'erano.
+    private static func textSafe(_ s: String) -> String {
+        guard s.count > 1, s.hasPrefix("0"), s.allSatisfy({ $0.isNumber }) else { return s }
+        return "=\"\(s)\""
+    }
 
     static let exportColumns = ["data", "ora", "calibro", "tipo", "provenienza", "variazione", "arma",
                                 "matricola", "saldo_ricaricate", "saldo_comprate", "saldo_totale", "nota"]
@@ -200,7 +207,7 @@ nonisolated enum MovementCSV {
                 m.provenance.label.lowercased(),
                 String(m.delta),
                 weapon?.name ?? "",
-                weapon?.serial ?? "",
+                textSafe(weapon?.serial ?? ""),
                 String(r.after.reloaded),
                 String(r.after.bought),
                 String(r.after.total),

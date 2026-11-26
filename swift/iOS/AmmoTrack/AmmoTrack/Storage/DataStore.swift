@@ -61,8 +61,6 @@ final class DataStore: ObservableObject {
         started = true
         if let url = FolderAccess.restore() {
             open(url)
-        } else if let url = FolderAccess.defaultFolder {
-            open(url)
         } else {
             needsFolder = true
         }
@@ -306,6 +304,25 @@ final class DataStore: ObservableObject {
             return nil
         }
     }
+    /// Importa un CSV di AmmoTrack: prima registra i calibri e le armi che non ci sono ancora,
+    /// poi aggiunge i movimenti. Per ⌘Z sono due passi: prima si annullano i movimenti, poi le armi.
+    func importAmmoTrack(_ report: AmmoTrackImportReport) -> String? {
+        let calibers = report.newCalibers
+        let weapons = report.newWeapons
+        if !calibers.isEmpty || !weapons.isEmpty {
+            let failure = mutateConfig(undoName: "Importazione di armi e calibri") { cfg in
+                for c in calibers where !cfg.calibers.contains(where: { $0.id == c.id }) {
+                    cfg.calibers.append(c)
+                }
+                for w in weapons where !cfg.weapons.contains(where: { $0.id == w.id }) {
+                    cfg.weapons.append(w)
+                }
+                return nil
+            }
+            if let failure { return failure }
+        }
+        return importMovements(report.movements, replacingPrefix: nil)
+    }
 
     // MARK: Annulla / Ripeti (⌘Z, ⇧⌘Z)
 
@@ -494,6 +511,19 @@ final class DataStore: ObservableObject {
         imageCache[key] = image
         return image
     }
+    /// Decodifica in anticipo foto e loghi delle armi (alle misure che usano il banner e le schede), una alla volta:
+    /// fra l'una e l'altra lo schermo può aggiornarsi. Così il banner armi non deve leggerli dal disco mentre si apre.
+    func warmImages() async {
+        for weapon in config.weapons where !weapon.isArchived {
+            _ = logo(for: weapon, maxPixel: 96)
+            await Task.yield()
+            _ = logo(for: weapon, maxPixel: 102)
+            await Task.yield()
+            _ = image(for: weapon, maxPixel: 900)
+            await Task.yield()
+        }
+    }
+
     /// Logo dell'arma (PNG con trasparenza), con cache in memoria.
     func logo(for weapon: Weapon?, maxPixel: Int) -> CGImage? {
         guard let weapon, let name = weapon.logoFile, let f = files else { return nil }
@@ -511,11 +541,7 @@ final class DataStore: ObservableObject {
         if let e = error as? CocoaError {
             switch e.code {
             case .fileReadNoPermission, .fileWriteNoPermission:
-                #if os(macOS)
-                return "Permesso negato su \(path). Con App Sandbox attiva imposta «User Selected File» su Lettura/Scrittura e scegli di nuovo la cartella (Impostazioni ▸ Cambia cartella); oppure rimuovi App Sandbox da Signing & Capabilities."
-                #else
-                return "Permesso negato su \(path). Scegli di nuovo la cartella (menu «…» ▸ Impostazioni ▸ Cambia cartella): l'accesso si perde se la cartella viene spostata o l'app viene reinstallata."
-                #endif
+                return "Permesso negato su \(path). Scegli di nuovo la cartella (Impostazioni ▸ Cambia cartella): l'accesso si perde se la cartella viene spostata o l'app viene reinstallata."
             case .fileReadNoSuchFile:
                 return "File non trovato: \(path)"
             default:

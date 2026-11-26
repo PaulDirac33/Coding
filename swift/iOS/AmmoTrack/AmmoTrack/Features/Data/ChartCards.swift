@@ -43,7 +43,6 @@ struct ChartCard<Accessory: View, Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            #if os(iOS)
             // iPhone: se accanto al titolo non c'è posto, legenda e selettori vanno sotto di esso.
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -56,19 +55,6 @@ struct ChartCard<Accessory: View, Content: View>: View {
                     accessory
                 }
             }
-            #else
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(title)
-                    .font(.headline)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Palette.muted)
-                }
-                Spacer(minLength: 8)
-                accessory
-            }
-            #endif
             content
         }
         .padding(16)
@@ -287,7 +273,6 @@ struct SummaryStrip: View {
     }
 
     var body: some View {
-        #if os(iOS)
         // iPhone e iPad in verticale: quattro riquadri affiancati sarebbero troppo stretti, ne metto due per riga.
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 14) {
@@ -307,14 +292,6 @@ struct SummaryStrip: View {
                 }
             }
         }
-        #else
-        HStack(spacing: 14) {
-            shotsTile
-            sessionsTile
-            lastTile
-            runwayTile
-        }
-        #endif
     }
 }
 
@@ -565,11 +542,13 @@ struct HistogramCard: View {
             Text("Ampiezza")
                 .font(.caption)
                 .foregroundStyle(Palette.muted)
-            GlassSegmented(options: HistogramCard.binSizes,
-                           selection: $binSize,
-                           segmentWidth: 48) { n, selected in
-                glassLabel("\(n)", selected: selected)
+            Picker("Ampiezza", selection: $binSize) {
+                ForEach(HistogramCard.binSizes, id: \.self) { n in
+                    Text("\(n)").tag(n)
+                }
             }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
         }
     }
 

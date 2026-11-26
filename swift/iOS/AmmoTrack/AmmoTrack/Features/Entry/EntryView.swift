@@ -5,23 +5,19 @@
 //  freccia giù = aggiunte, freccia su = sparate, selettore ricaricate/comprate, tasto dell'arma
 //  (il calibro è quello dell'arma), ultimo evento con "Annulla" e i saldi rispetto ai limiti.
 //
-//  Tastiera:  cifre   scrivono il numero        ↓  registra "aggiunte"     ↑  registra "sparate"
-//             ← →     ricaricate / comprate     ⌫  cancella l'ultima cifra   Esc  svuota (o chiude il selettore)
-// ⌘Z annulla · ⇧⌘Z ripete
-//  Il codice della tastiera e dell'inserimento è in EntryView+Input.swift.
-// ⌘↓ apre il banner armi · ↑ ↓ ↩ lo guidano · ⌘↩ assorbe/espande le armi
-// ⌘D apre il calendario della data
-// iPhone e iPad: al posto della tastiera c'è il tastierino a schermo (EntryKeypad.swift); i tasti ↑ ↓ e il selettore sono gli stessi.
+//  Cifre:  toccando la casella compare la tastiera (DigitsInput.swift); si chiude toccando fuori. Non compare mai da sola.
+//  ↓ registra «aggiunte», ↑ registra «sparate» (i due tasti tondi).
+//  In alto i saldi e l'ultimo movimento (restano visibili anche con la tastiera aperta), sotto i comandi.
+//  Il codice dell'inserimento è in EntryView+Input.swift.
 import SwiftUI
-#if os(macOS)
-import AppKit
-#endif
 
 // MARK: - Tipi di supporto
 /// Larghezza del selettore ricaricate/comprate (2 voci da 124 pt + 2 margini da 3 pt).
 /// La casella di inserimento e il banner armi aperto hanno la stessa larghezza.
 enum EntryLayout {
     static let controlWidth: CGFloat = 254
+    /// Larghezza della colonna dei comandi: lascia ai lati del selettore lo spazio per Annulla e Ripeti.
+    static let columnWidth: CGFloat = 340
 }
 
 /// Che cosa si sta per registrare: il calibro (che è quello dell'arma) e l'arma, se indicata.
@@ -43,11 +39,6 @@ enum EntryStatus {
     case error
 }
 
-/// Interruttore letto dal monitor dei tasti (che non vede lo stato aggiornato della vista).
-@MainActor
-final class KeyGate {
-    var active = false
-}
 /// Numero dell'ultima sincronizzazione richiesta: chi arriva dopo annulla quelle ancora in attesa.
 @MainActor
 final class SyncToken {
@@ -75,6 +66,7 @@ struct ShakeEffect: GeometryEffect {
 
 struct EntryView: View {
     @EnvironmentObject var store: DataStore
+    @Environment(\.horizontalSizeClass) var sizeClass
 
     /// true quando questa è la pagina visibile: solo allora la casella riceve i tasti.
     let isActive: Bool
@@ -88,27 +80,23 @@ struct EntryView: View {
     @State var day: Date? = nil              // nil = oggi
     @State var showCalendar = false
     @State var pickerOpen = false
-    @State var pickerCommand = PickerCommand()   // ultimo comando da tastiera mandato al banner armi
     @State var statusText = ""
     @State var statusKind: EntryStatus = .none
     @State var flash = false
     @State var flashError = false            // lampo rosso: inserimento rifiutato
     @State var shakes: CGFloat = 0           // contatore del tremolio
-    @State var keyMonitor: Any? = nil
-    @State var gate = KeyGate()
     @State var syncToken = SyncToken()
-    @FocusState var inputFocused: Bool
+    @State var inputFocused = false          // la tastiera è su (campo di testo in DigitsInput.swift)
     @Namespace var buttonsNS      // per il morph del vetro fra i due tasti
     @State var addShown = true               // «Aggiunte» visibile: segue showsAddButton, ma solo a banner chiuso
     @State var look = ProvenanceLook(selector: true, bought: false, name: "")   // aspetto mostrato di selettore e tasti
     @State var pageHeight: CGFloat = 700     // altezza della pagina (misurata)
     @State var slotTop: CGFloat = 300        // distanza del tasto armi dall'alto della pagina (misurata)
-    @State var pageWidth: CGFloat = 1180     // larghezza della pagina (misurata): sotto i 600 pt è un iPhone in verticale
 
     let maxLength = 6        // cifre massime nella casella
     /// Secondi fra l'inizio della chiusura del banner e il fondersi/dividersi dei tasti.
     /// 0 = partono insieme; alzalo se vuoi che il banner sia già quasi chiuso.
-    let addButtonDelay: Double = 0.15
+    let addButtonDelay: Double = 0.45
     /// Animazione del colore dei tasti e della sfumatura del selettore ricaricate/comprate.
     /// Durata della sfumatura del colore dei tasti e del selettore ricaricate/comprate.
     /// Serve anche a far partire la fusione dei tasti solo a sfumatura finita.
@@ -177,93 +165,81 @@ struct EntryView: View {
     /// Altezza massima del banner armi aperto: dal tasto fino al fondo della pagina,
     /// con lo stesso margine (14 pt) della scheda dei saldi.
     var pickerRoom: CGFloat { max(160, pageHeight - slotTop - 14) }
-    /// iPhone in verticale: margini e spazi un po' più stretti.
-    var isPhone: Bool { pageWidth < Adaptive.phoneWidth }
-
-    /// Cursore lampeggiante. Su Mac solo con la casella in primo piano; su iPhone e iPad sempre sulla pagina
-    /// visibile, perché le cifre si scrivono dal tastierino a schermo senza dover "attivare" la casella.
-    var showsCaret: Bool {
-        #if os(iOS)
-        return isActive
-        #else
-        return inputFocused
-        #endif
-    }
 
     // MARK: Corpo
 
+    /// iPad: saldi a sinistra e comandi a destra. iPhone: tutto in una colonna.
+    var twoColumns: Bool { sizeClass == .regular }
+
+    /// In alto: saldi e ultimo movimento. Restano visibili anche con la tastiera aperta.
+    var dashboard: some View {
+        VStack(spacing: 10) {
+            BalanceCard()
+            statusRow
+        }
+    }
+
+    /// Provenienza, tasti, casella, tasto dell'arma. Il banner armi è l'ultimo e si apre verso il basso:
+    /// non copre nessun controllo. zIndex alto perché il banner aperto sporge sopra lo spazio vuoto.
+    var controls: some View {
+        VStack(spacing: 14) {
+            provenanceRow
+            actionButtons
+            amountPill
+            weaponSlot
+        }
+        .zIndex(10)
+    }
+
     var body: some View {
         ZStack {
-            // Cliccando in un punto qualunque della pagina si chiude il selettore e si torna a scrivere.
+            // Toccando un punto qualunque della pagina si chiudono il banner armi e la tastiera.
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
                     closePicker()
-                    inputFocused = true
+                    inputFocused = false
                 }
 
-            VStack(spacing: 0) {
-                // In alto: provenienza, tasti, casella, banner armi.
-                // Il banner è l'ultimo e si apre verso il basso: non copre più nessun controllo.
-                // zIndex alto perché il banner aperto sporge sopra stato e saldi.
-                VStack(spacing: isPhone ? 14 : 20) {
-                    provenanceRow
-                    actionButtons
-                    amountPill
-                    weaponSlot
-                    #if os(iOS)
-                    keypad
-                    #endif
+            Group {
+                if twoColumns {
+                    HStack(alignment: .top, spacing: 40) {
+                        dashboard
+                            .frame(width: 390)
+                        controls
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 24)
+                } else {
+                    VStack(spacing: 14) {
+                        dashboard
+                        controls
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 8)
                 }
-                .padding(.top, 8)
-                .zIndex(10)
-
-                Spacer(minLength: isPhone ? 12 : 24)
-
-                // In basso: ultimo movimento attaccato ai saldi
-                VStack(spacing: 10) {
-                    statusRow
-                    BalanceCard()
-                }
-                .padding(.bottom, 14)
             }
-            .padding(.horizontal, isPhone ? 16 : 24)
+            .padding(.horizontal, 16)
         }
         .coordinateSpace(.named("entryPage"))
-        .background {
-            // ⌘D apre il calendario della data. Il tasto esiste in tutte e tre le pagine del pager,
-            // quindi lo spengo quando questa non è quella visibile.
-            Button("") { openCalendar() }
-                .keyboardShortcut("d", modifiers: .command)
-                .disabled(!isActive)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
-        }
+        .ignoresSafeArea(.keyboard, edges: .bottom)        // la tastiera copre il fondo ma non sposta niente
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
         .onAppear {
             addShown = showsAddButton
             look = lookWanted
-            gate.active = isActive
-            installKeyMonitor()
-            DispatchQueue.main.async { inputFocused = isActive }
         }
-        .onDisappear { removeKeyMonitor() }
         .onChange(of: isActive) { _, active in
-            gate.active = active
-            if active {
-                DispatchQueue.main.async { inputFocused = true }
-            } else {
+            if !active {                                    // cambio pagina: la tastiera si chiude
                 inputFocused = false
                 pickerOpen = false
                 showCalendar = false
             }
         }
-        .onChange(of: inputText) {
+        .onChange(of: inputText) { _, new in
+            sanitizeInput(new)
             // Avvisi ed errori spariscono quando riprendi a scrivere;
             // l'ultimo evento (con l'orario) resta visibile.
-            if statusKind != .none && !inputText.isEmpty {
+            if statusKind != .none && !new.isEmpty {
                 statusText = ""
                 statusKind = .none
             }
@@ -272,16 +248,14 @@ struct EntryView: View {
             if !pickerOpen { syncControls() }                       // cambio a banner chiuso (es. arma archiviata)
         }
         .onChange(of: pickerOpen) { _, open in
-            if !open {
+            if open {
+                inputFocused = false                        // il banner ha bisogno di tutto lo schermo
+            } else {
                 syncControls(after: addButtonDelay)        // il banner si è chiuso
-                if isActive { inputFocused = true }        // e si torna a scrivere le cifre
             }
         }
         .onChange(of: showCalendar) { _, open in
-            // Calendario chiuso (Esc, clic fuori, Fine, Oggi): si torna a scrivere le cifre.
-            if !open && isActive {
-                DispatchQueue.main.async { inputFocused = true }
-            }
+            if open { inputFocused = false }                // il calendario si sceglie senza tastiera davanti
         }
         .onChange(of: storedProvenance) { _, _ in
             syncLook()                                              // selettore mosso: il colore segue subito, anche a banner aperto
@@ -299,8 +273,7 @@ struct EntryView: View {
             .frame(width: 320, height: 52)
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("entryPage")).minY } action: { slotTop = $0 }
             .overlay(alignment: .top) {
-                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, maxPanelHeight: pickerRoom,
-                             command: pickerCommand)
+                WeaponPicker(target: targetBinding, isOpen: $pickerOpen, maxPanelHeight: pickerRoom)
             }
             .zIndex(10)
     }
@@ -315,7 +288,7 @@ struct EntryView: View {
     var buttonGap: CGFloat { (EntryLayout.controlWidth - 6) / 2 - 56 }
 
     var actionButtons: some View {
-        GlassContainer(spacing: buttonGap) {
+        GlassEffectContainer(spacing: buttonGap) {
             HStack(spacing: buttonGap) {
                 if addShown {
                     directionButton(.added)
@@ -412,10 +385,7 @@ struct EntryView: View {
         .animation(.easeOut(duration: 0.25), value: inputFocused)
         .animation(.easeOut(duration: 0.25), value: flash)
         .modifier(ShakeEffect(shakes: shakes))
-        .focusable(isActive, interactions: .edit)
-        .focused($inputFocused)
-        .focusEffectDisabled()
-        .onKeyPress(phases: [.down, .repeat]) { press in handleKey(press) }
+        .background { amountField }
         .onTapGesture {
             closePicker()
             inputFocused = true
@@ -434,7 +404,7 @@ struct EntryView: View {
                             .combined(with: .offset(y: 14)),
                         removal: .scale(scale: 0.3).combined(with: .opacity)))
             }
-            if showsCaret {
+            if inputFocused {
                 BlinkingCaret(height: 38)
             }
             if inputText.isEmpty {
@@ -443,6 +413,17 @@ struct EntryView: View {
                     .foregroundStyle(Color.white.opacity(0.25))
             }
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.62), value: inputText)   // le cifre entrano/escono a molla
+    }
+
+    /// Il campo di testo vero, invisibile: porta la tastiera (vedi DigitsInput.swift). Compare solo toccando la casella.
+    /// Le cifre le disegna la casella; qui dentro c'è solo il testo digitato.
+    var amountField: some View {
+        DigitsInputField(text: $inputText, isFocused: $inputFocused, style: entryKeyboardStyle)
+            .frame(width: 1, height: 1)
+            .opacity(0.02)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     // MARK: Data
@@ -473,7 +454,9 @@ struct EntryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showCalendar, arrowEdge: .bottom) { calendarPopover.keepsPopover() }
+        .popover(isPresented: $showCalendar, arrowEdge: .bottom) {
+            calendarPopover.presentationCompactAdaptation(.popover)
+        }
     }
 
     var dayBinding: Binding<Date> {
@@ -502,7 +485,6 @@ struct EntryView: View {
 
                 Button {
                     showCalendar = false
-                    inputFocused = true
                 } label: {
                     Text("Fine").frame(maxWidth: .infinity)
                 }
@@ -522,19 +504,13 @@ struct EntryView: View {
     var provenanceRow: some View {
         ZStack {
             if look.selector {
-                GlassSegmented(options: Provenance.allCases,
-                               selection: provenanceBinding,
-                               totalWidth: EntryLayout.controlWidth,
-                               walls: .horizontal) { p, selected in
-                    HStack(spacing: 7) {
-                        Image(systemName: p.symbol)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(p.color)
-                        Text(p.label)
-                            .font(.system(size: 13, weight: selected ? .semibold : .medium))
-                            .foregroundStyle(selected ? Color.white : Color.white.opacity(0.68))
+                Picker("Provenienza", selection: provenanceBinding) {
+                    ForEach(Provenance.allCases) { p in
+                        Text(p.label).tag(p)
                     }
                 }
+                .pickerStyle(.segmented)                  // quello di sistema: Liquid Glass vero, la lente scorre
+                .frame(width: EntryLayout.controlWidth)
                 .transition(.opacity)
             } else {
                 HStack(spacing: 6) {
@@ -548,7 +524,45 @@ struct EntryView: View {
                 .transition(.opacity)
             }
         }
-        .frame(height: 36)
+        .frame(width: EntryLayout.columnWidth, height: 40)
+        .overlay(alignment: .leading) { undoButton }
+        .overlay(alignment: .trailing) { redoButton }
+    }
+
+    /// Annulla l'ultimo movimento (sul Mac è ⌘Z).
+    var undoButton: some View {
+        Button {
+            _ = store.undo()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 38, height: 38)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassCircle(interactive: true)
+        .disabled(store.undoName == nil)
+        .opacity(store.undoName == nil ? 0.35 : 1)
+        .accessibilityLabel(store.undoName.map { "Annulla \($0)" } ?? "Annulla")
+    }
+
+    /// Ripete l'ultimo movimento annullato (sul Mac è ⇧⌘Z).
+    var redoButton: some View {
+        Button {
+            _ = store.redo()
+        } label: {
+            Image(systemName: "arrow.uturn.forward")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 38, height: 38)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassCircle(interactive: true)
+        .disabled(store.redoName == nil)
+        .opacity(store.redoName == nil ? 0.35 : 1)
+        .accessibilityLabel(store.redoName.map { "Ripeti \($0)" } ?? "Ripeti")
     }
 
     // MARK: Stato e ultimo evento

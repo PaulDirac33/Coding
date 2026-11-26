@@ -16,8 +16,7 @@ struct FolderSetupView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.45)
-                .ignoresSafeArea()
+            AppBackground()
             VStack(spacing: 14) {
                 Image(systemName: "folder")
                     .font(.system(size: 38, weight: .light))
@@ -40,11 +39,9 @@ struct FolderSetupView: View {
                 ErrorLine(text: error)
             }
             .padding(30)
-            .macFixedWidth(440)
+            .frame(maxWidth: 440)
             .liquidGlass(cornerRadius: 26)
-            #if os(iOS)
             .padding(.horizontal, 16)
-            #endif
         }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
             switch result {
