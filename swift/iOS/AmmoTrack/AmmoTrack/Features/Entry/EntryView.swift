@@ -441,21 +441,18 @@ struct EntryView: View {
         Button {
             showCalendar = true
         } label: {
-            HStack(spacing: 5) {
-                Text(dateTitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(day == nil ? Palette.muted : Palette.reloaded)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 2)
-            .contentShape(Rectangle())
+            Text(dateTitle)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(day == nil ? Palette.muted : Palette.reloaded)
+                .padding(.horizontal, 12)
+                .padding(.top, 2)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showCalendar, arrowEdge: .bottom) {
-            calendarPopover.presentationCompactAdaptation(.popover)
+        .sheet(isPresented: $showCalendar) {
+            calendarPopover
+                .presentationDetents([.height(400)])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -464,21 +461,20 @@ struct EntryView: View {
                 set: { new in day = Cal.cal.isDateInToday(new) ? nil : new })
     }
 
-    /// Il popover prende la larghezza del calendario (niente larghezza fissa) più un piccolo margine.
-    /// I due tasti si dividono quella larghezza, vicini, in vetro a capsula (alone tondo, non squadrato).
+    /// Contenuto del foglio del calendario (il nome è rimasto "popover" per non toccare altro).
     var calendarPopover: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             DatePicker("Data", selection: dayBinding, in: ...Date(), displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .labelsHidden()
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))   // spigoli tondi, e taglia l'anello di focus
+                .dynamicTypeSize(...DynamicTypeSize.large)       // il testo del calendario non supera la misura standard
 
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 Button {
                     day = nil
                     showCalendar = false
                 } label: {
-                    Text("Oggi").frame(maxWidth: .infinity)
+                    Text("Oggi").fontWeight(.semibold).frame(width: 64)               // larghezza del testo: la pillola si stringe attorno
                 }
                 .glassButton()
                 .buttonBorderShape(.capsule)
@@ -486,16 +482,20 @@ struct EntryView: View {
                 Button {
                     showCalendar = false
                 } label: {
-                    Text("Fine").frame(maxWidth: .infinity)
+                    Text("Fine").fontWeight(.semibold).frame(width: 64)
                 }
                 .keyboardShortcut(.defaultAction)
                 .glassProminentButton()
                 .buttonBorderShape(.capsule)
             }
-            .focusEffectDisabled()                           // niente anello di focus quadrato sui tasti
+            .controlSize(.small)
+            .focusEffectDisabled()
         }
-        .padding(12)
-        .fixedSize()
+        .padding(.horizontal, 16)
+        .padding(.top, 16)                                       // spazio per la barretta di trascinamento
+        .padding(.bottom, 6)
+        .frame(maxWidth: 420)                                    // iPad: il foglio è più largo, il calendario no
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: Provenienza
