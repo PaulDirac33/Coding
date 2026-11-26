@@ -419,7 +419,7 @@ struct EntryView: View {
     /// Il campo di testo vero, invisibile: porta la tastiera (vedi DigitsInput.swift). Compare solo toccando la casella.
     /// Le cifre le disegna la casella; qui dentro c'è solo il testo digitato.
     var amountField: some View {
-        DigitsInputField(text: $inputText, isFocused: $inputFocused, style: entryKeyboardStyle)
+        DigitsInputField(text: $inputText, isFocused: $inputFocused)
             .frame(width: 1, height: 1)
             .opacity(0.02)
             .allowsHitTesting(false)
