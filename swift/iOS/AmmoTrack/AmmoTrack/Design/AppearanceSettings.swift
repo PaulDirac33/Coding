@@ -16,4 +16,4 @@ let appBackgroundStyle: BackgroundStyle = .camouflage
 
 /// Il banner armi si apre con la trasformazione del vetro (true) oppure con una dissolvenza (false, più leggera:
 /// è quella che non scatta). Metti true solo se vuoi riprovare la trasformazione.
-let weaponPickerMorphs = false
+let weaponPickerMorphs = true

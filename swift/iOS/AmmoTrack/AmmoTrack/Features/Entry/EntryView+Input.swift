@@ -21,7 +21,7 @@ extension EntryView {
 
     func closePicker() {
         if pickerOpen {
-            withAnimation(.smooth(duration: 0.28)) { pickerOpen = false }
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { pickerOpen = false }
         }
     }
     // MARK: Tastiera
