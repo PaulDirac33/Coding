@@ -19,6 +19,12 @@ import UIKit
 /// Grigio: 0 = nero, 1 = bianco. Opacità: 0 = trasparente (vetro pulito), 1 = pieno.
 let provenanceLensGray: CGFloat = 0.3
 let provenanceLensOpacity: CGFloat = 0.6
+/// Ingrandimento di simbolo e scritta sotto la bolla mentre la tocchi o la trascini (1 = nessuno, 1.2 = +20%).
+let provenanceZoomPressed: CGFloat = 1.2
+/// Ingrandimento a bolla ferma (1 = nessuno; con 1.05 resta un piccolo ingrandimento fisso).
+let provenanceZoomAtRest: CGFloat = 1.0
+/// true = il simbolo della voce appena scelta fa il «bounce» di SF Symbols.
+let provenanceSymbolBounce = false
 
 struct ProvenanceSelector: View {
     @Binding var selection: Provenance
@@ -30,6 +36,8 @@ struct ProvenanceSelector: View {
     @State private var dragPos: Double? = nil
     @State private var dragActive = false
     @State private var settleTicket = 0
+    @State private var pressed = false                          // il dito è sulla bolla
+    @State private var bounceCount: [Provenance: Int] = [:]     // quante volte è stata scelta ogni voce (fa partire il bounce)
 
     private var segmentWidth: CGFloat {
         (EntryLayout.controlWidth - 6) / CGFloat(Provenance.allCases.count)
@@ -43,11 +51,12 @@ struct ProvenanceSelector: View {
     private var lensPos: Double { dragPos ?? restPos }
 
     var body: some View {
-        ProvenanceSegments(selection: $selection, onLens: lensMoved)
+        ProvenanceSegments(selection: $selection, onLens: lensMoved, onPress: lensPressed)
             .frame(width: EntryLayout.controlWidth, height: Self.height)
             .overlay { labels }
-            .onChange(of: selection) { _, _ in
-                if !dragActive { dragPos = nil }          // la scelta è arrivata: da qui si segue la voce scelta
+            .onChange(of: selection) { _, new in
+                bounceCount[new, default: 0] += 1                // fa partire il bounce della voce scelta (se attivo)
+                if !dragActive { dragPos = nil }                 // la scelta è arrivata: da qui si segue la voce scelta
             }
     }
 
@@ -69,6 +78,17 @@ struct ProvenanceSelector: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             if settleTicket == ticket && !dragActive { dragPos = nil }
         }
+    }
+    /// Il dito si appoggia sulla bolla (true) o si stacca (false): le voci sotto la bolla si ingrandiscono a molla.
+    private func lensPressed(_ down: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { pressed = down }
+    }
+
+    /// Ingrandimento della voce `index`: massimo con la bolla centrata su di lei, nullo quando è sull'altra.
+    private func zoom(_ index: Int) -> CGFloat {
+        let coverage = max(0, 1 - abs(lensPos - Double(index)))
+        let z = pressed ? provenanceZoomPressed : provenanceZoomAtRest
+        return 1 + (z - 1) * CGFloat(coverage)
     }
 
     // MARK: Simboli e scritte (sopra al controllo)
@@ -92,14 +112,16 @@ struct ProvenanceSelector: View {
     /// Le due voci stanno nella stessa posizione di quelle del controllo: margine di 3 pt e metà larghezza ciascuna.
     private func labelRow(colored: Bool) -> some View {
         HStack(spacing: 0) {
-            ForEach(Provenance.allCases) { p in
+            ForEach(Array(Provenance.allCases.enumerated()), id: \.element) { index, p in
                 VStack(spacing: 1) {
                     Image(systemName: p.symbol)
                         .font(.system(size: 15, weight: .semibold))
+                        .symbolEffect(.bounce, value: provenanceSymbolBounce ? bounceCount[p, default: 0] : 0)
                     Text(p.label)
                         .font(.system(size: 11, weight: .medium))
                 }
                 .foregroundStyle(colored ? p.color : Palette.muted)
+                .scaleEffect(zoom(index))
                 .frame(maxWidth: .infinity)
             }
         }
@@ -113,9 +135,11 @@ private struct ProvenanceSegments: UIViewRepresentable {
     @Binding var selection: Provenance
     /// (posizione della bolla, finito): posizione stimata dal dito, da 0 (prima voce) a 1 (ultima).
     var onLens: (Double, Bool) -> Void
+    /// true quando il dito si appoggia sulla bolla, false quando si stacca.
+    var onPress: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection, onLens: onLens)
+        Coordinator(selection: $selection, onLens: onLens, onPress: onPress)
     }
 
     func makeUIView(context: Context) -> UISegmentedControl {
@@ -147,6 +171,7 @@ private struct ProvenanceSegments: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.selection = $selection
         coordinator.onLens = onLens
+        coordinator.onPress = onPress
         // La scelta si passa al controllo SOLO se è cambiata da fuori. Questa funzione gira a ogni movimento del dito:
         // se rimettesse la scelta vecchia mentre trascini, la bolla non riuscirebbe a cambiare voce.
         if coordinator.lastSelection != selection {
@@ -166,6 +191,7 @@ private struct ProvenanceSegments: UIViewRepresentable {
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var selection: Binding<Provenance>
         var onLens: (Double, Bool) -> Void
+        var onPress: (Bool) -> Void
         /// L'ultima scelta nota (arrivata dal controllo o da SwiftUI): serve a non rimettere nel controllo una scelta vecchia.
         var lastSelection: Provenance
 
@@ -176,9 +202,12 @@ private struct ProvenanceSegments: UIViewRepresentable {
         private var startPos: Double = 0
         private var lastPos: Double = 0
 
-        init(selection: Binding<Provenance>, onLens: @escaping (Double, Bool) -> Void) {
+        init(selection: Binding<Provenance>,
+             onLens: @escaping (Double, Bool) -> Void,
+             onPress: @escaping (Bool) -> Void) {
             self.selection = selection
             self.onLens = onLens
+            self.onPress = onPress
             self.lastSelection = selection.wrappedValue
         }
 
@@ -209,6 +238,7 @@ private struct ProvenanceSegments: UIViewRepresentable {
                 armed = index >= 0
                     && x >= inset + CGFloat(index) * width
                     && x <= inset + CGFloat(index + 1) * width
+                if armed { onPress(true) }
             case .changed:
                 guard armed else { return }
                 if !dragging && abs(x - startX) < 4 { return }      // un tocco fermo non è un trascinamento
@@ -221,10 +251,12 @@ private struct ProvenanceSegments: UIViewRepresentable {
                     onLens(lastPos, true)
                     commit(target, in: control)
                 }
+                if armed { onPress(false) }
                 dragging = false
                 armed = false
             case .cancelled, .failed:
                 if dragging { onLens(startPos, true) }
+                if armed { onPress(false) }
                 dragging = false
                 armed = false
             default:
