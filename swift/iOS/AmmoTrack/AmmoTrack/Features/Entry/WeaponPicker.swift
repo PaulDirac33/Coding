@@ -46,9 +46,19 @@ final class PickerReveal: ObservableObject {
     @Published var rowsVisible = false
     /// true = il banner copre il tasto: il tasto sparisce, per non vedere due vetri sovrapposti.
     @Published var coversButton = false
-    /// Altezza attuale del vetro del banner. La scrive il banner, la leggono l'apertura e la chiusura.
+    /// Altezza attuale del banner. La scrive il banner, la leggono l'apertura e la chiusura.
     /// Non è pubblicata: cambia di continuo e non serve ridisegnare niente.
-    var panelHeight: CGFloat = 0
+    var panelHeight: CGFloat = 0 {
+        didSet {
+            if panelHeight != oldValue { onPanelHeight?(panelHeight) }
+        }
+    }
+    /// La presentazione UIKit si fa avvisare quando l'altezza cambia, per adeguare il vetro.
+    var onPanelHeight: ((CGFloat) -> Void)? = nil
+    /// true = in cima al banner si vede la scritta del tasto (sfuma via all'apertura, torna alla chiusura).
+    @Published var labelVisible = true
+    /// Altezza del tasto all'apertura o alla chiusura: serve a posare la scritta in cima al banner.
+    var sourceHeight: CGFloat = 52
 }
 
 // MARK: - Tasto
@@ -79,10 +89,8 @@ struct WeaponPicker: View {
     private var overlayVersion: some View {
         pickerButton
             .glassCapsule()                      // NON interactive: il banner lo sostituisce subito
-            // Mentre il banner è aperto lo copre esattamente: il tasto sparisce all'istante e torna con una
-            // breve dissolvenza alla chiusura.
+            // Il tasto sparisce e riappare di colpo: il vetro a opacità intermedia si appiattisce (grigio).
             .opacity(reveal.coversButton ? 0 : 1)
-            .animation(reveal.coversButton ? nil : Animation.easeOut(duration: 0.12), value: reveal.coversButton)
             .background {
                 PickerPresenter(isPresented: $isOpen,
                                 reveal: reveal,
@@ -93,6 +101,9 @@ struct WeaponPicker: View {
             // Vibrazione: leggera all'apertura, di selezione a ogni scelta (come i menù di sistema).
             .sensoryFeedback(.impact(flexibility: .soft), trigger: isOpen) { _, opened in opened }
             .sensoryFeedback(.selection, trigger: target)
+            // Cambiando arma il tasto cambia misura subito, non con la molla di choose():
+            // altrimenti il banner si richiude su una cornice ancora in movimento.
+            .animation(nil, value: target)
     }
 
     /// Ripiego: popover di sistema (con la freccia). `drawsGlass: false` perché il vetro lo mette il popover.
@@ -114,7 +125,8 @@ struct WeaponPicker: View {
                           target: $target,
                           isOpen: $isOpen,
                           maxPanelHeight: maxPanelHeight,
-                          drawsGlass: drawsGlass)
+                          drawsGlass: drawsGlass,
+                          closedLabel: AnyView(labelContent))
             .environmentObject(store)
             .preferredColorScheme(.dark)
     }
@@ -147,19 +159,24 @@ struct WeaponPicker: View {
         return parts.joined(separator: pickerSeparator)
     }
 
+    /// La scritta del tasto: la usa anche il banner, in cima, mentre si apre e si chiude.
+    @ViewBuilder
+    private var labelContent: some View {
+        if isCaliberOnly {
+            compactLabel
+        } else {
+            fullLabel
+        }
+    }
+
     private var pickerButton: some View {
         Button {
             isOpen = true
         } label: {
-            if isCaliberOnly {
-                compactLabel
-            } else {
-                fullLabel
-            }
+            labelContent
         }
         .buttonStyle(.plain)
     }
-
     /// Con un'arma: miniatura, nome e calibro/matricola sulla seconda riga. Nessuna larghezza fissa:
     /// il tasto si stringe attorno al contenuto, come nel caso del solo calibro.
     private var fullLabel: some View {
@@ -218,6 +235,8 @@ struct WeaponPickerPanel: View {
     var maxPanelHeight: CGFloat = 360     // la decide EntryView: dal tasto fino al fondo della pagina
     /// true = il banner disegna il proprio vetro (presentazione UIKit); false = lo disegna chi lo contiene (popover).
     var drawsGlass = true
+    /// La scritta del tasto (la costruisce WeaponPicker): in cima al banner, sfuma via all'apertura e torna alla chiusura.
+    var closedLabel = AnyView(EmptyView())
 
     private let panelWidth: CGFloat = EntryLayout.controlWidth
 
@@ -284,11 +303,11 @@ struct WeaponPickerPanel: View {
         return Group {
             if drawsGlass {
                 content
-                    .liquidGlass(cornerRadius: 26)
                     .animation(Self.absorbAnimation, value: collapsedRaw)
                     // L'altezza del vetro serve alla presentazione (apertura e chiusura) e ai tocchi.
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reveal.panelHeight = $0 }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .overlay(alignment: .top) { closedLabelView }
             } else {
                 content
                     .onAppear { reveal.rowsVisible = true }
@@ -297,6 +316,13 @@ struct WeaponPickerPanel: View {
         .ignoresSafeArea()
         .onChange(of: collapsedRaw) { topIndex = 0 }          // assorbendo o espandendo la lista torna all'inizio
         .onDisappear { stopAutoScroll() }
+    }
+    private var closedLabelView: some View {
+        closedLabel
+            .frame(width: 320, height: reveal.sourceHeight)           // 320 = larghezza dello slot in EntryView
+            .opacity(reveal.labelVisible ? 1 : 0)
+            .animation(.easeOut(duration: reveal.labelVisible ? 0.22 : 0.15), value: reveal.labelVisible)
+            .allowsHitTesting(false)
     }
 
     // MARK: Misure
@@ -1051,9 +1077,10 @@ private final class PanelContainerView: UIView {
     }
 }
 
-/// La finestra trasparente a tutto schermo che porta il banner. Non anima SwiftUI: anima una cornice UIKit
-/// (Core Animation, nel render server) che passa dal tasto al banner e lo scopre dall'alto, con gli angoli che
-/// si arrotondano. Il banner dentro è già disegnato a misura piena, fermo, quindi non si ricalcola niente.
+/// La finestra trasparente a tutto schermo che porta il banner. Il vetro è una vista UIKit (UIGlassEffect) che
+/// cambia solo cornice: dal tasto al banner e ritorno. Nessuna maschera e nessun alpha sopra il vetro, che
+/// altrimenti si appiattirebbe. Il banner SwiftUI dentro è già a misura piena, fermo, e senza vetro proprio:
+/// le righe sfumano sopra il vetro che si apre.
 @MainActor
 private final class PickerOverlayController: UIViewController, UIGestureRecognizerDelegate {
     let hosting: UIHostingController<AnyView>
@@ -1062,6 +1089,8 @@ private final class PickerOverlayController: UIViewController, UIGestureRecogniz
     var onOutsideTap: () -> Void = {}
 
     private let container = PanelContainerView()
+    /// Il vetro vero del banner.
+    private let glass = UIVisualEffectView(effect: UIGlassEffect())
     private let reveal: PickerReveal
     private let panelWidth: CGFloat
     private let maxHeight: CGFloat
@@ -1098,14 +1127,18 @@ private final class PickerOverlayController: UIViewController, UIGestureRecogniz
         view.addGestureRecognizer(tap)
 
         container.backgroundColor = .clear
-        container.alpha = 0
+        container.alpha = 0                       // finché non parte l'apertura (poi resta sempre 1)
         container.visibleHeight = { [weak self] in self?.reveal.panelHeight ?? 0 }
         view.addSubview(container)
+
+        // Angoli: metà altezza finché il vetro è basso (tasto = capsula), al massimo 26 pt (banner).
+        glass.cornerConfiguration = .capsule(maximumRadius: 26)
+        container.addSubview(glass)
 
         addChild(hosting)
         hosting.view.backgroundColor = .clear
         hosting.view.isOpaque = false
-        container.addSubview(hosting.view)
+        container.addSubview(hosting.view)        // sopra il vetro
         hosting.didMove(toParent: self)
     }
 
@@ -1122,18 +1155,23 @@ private final class PickerOverlayController: UIViewController, UIGestureRecogniz
         onOutsideTap()                       // rotazione o cambio di finestra: il banner si chiude
     }
 
+    /// Cornice del vetro in coordinate del contenitore (che sta fermo, alto quanto il banner più grande possibile).
+    private func glassFrame(for source: CGRect) -> CGRect {
+        CGRect(x: source.minX - finalX, y: source.minY - sourceFrame.minY,
+               width: source.width, height: source.height)
+    }
+
     // MARK: Apertura
 
-    /// Mette il banner al suo posto (invisibile), aspetta che SwiftUI lo disegni e lo misuri, poi parte l'animazione.
-    /// Così il lavoro pesante (layout, misure) avviene PRIMA che l'animazione cominci.
+    /// Mette tutto al suo posto (invisibile), aspetta che SwiftUI disegni e misuri il banner, poi parte l'animazione.
     func open() {
-        container.clipsToBounds = true
-        container.layer.cornerCurve = .continuous
-        container.layer.cornerRadius = sourceFrame.height / 2
-        container.frame = sourceFrame
-        hosting.view.frame = CGRect(x: finalX - sourceFrame.minX, y: 0, width: panelWidth, height: maxHeight)
+        container.frame = CGRect(x: finalX, y: sourceFrame.minY, width: panelWidth, height: maxHeight)
+        hosting.view.frame = container.bounds
+        glass.frame = glassFrame(for: sourceFrame)
         container.alpha = 0
         view.layoutIfNeeded()
+
+        reveal.onPanelHeight = { [weak self] h in self?.panelHeightChanged(h) }
 
         Task { @MainActor [weak self] in
             var tries = 0
@@ -1149,23 +1187,18 @@ private final class PickerOverlayController: UIViewController, UIGestureRecogniz
         guard !closed else { return }
         revealStarted = true
         let h = min(max(reveal.panelHeight, sourceFrame.height), maxHeight)
-        let end = CGRect(x: finalX, y: sourceFrame.minY, width: panelWidth, height: h)
 
         container.alpha = 1
-        reveal.coversButton = true                // il tasto sparisce: il banner parte esattamente da lì
+        reveal.coversButton = true                // il tasto sparisce: il vetro parte esattamente da lì
+        reveal.labelVisible = false               // la scritta del tasto sfuma via
 
-        // La cornice (e con lei la posizione del banner dentro di lei) si muove con la stessa molla:
-        // il banner resta fermo sullo schermo, è la cornice che lo scopre.
+        // Il vetro si allarga dal tasto al banner (Core Animation, nel render server).
         UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.82, initialSpringVelocity: 0,
                        options: [.allowUserInteraction, .beginFromCurrentState]) {
-            self.container.frame = end
-            self.hosting.view.frame = CGRect(x: 0, y: 0, width: self.panelWidth, height: self.maxHeight)
-            self.container.layer.cornerRadius = 26
-        } completion: { _ in
-            self.settleOpen()
+            self.glass.frame = CGRect(x: 0, y: 0, width: self.panelWidth, height: h)
         }
 
-        // Le righe sfumano in entrata a banner quasi aperto.
+        // Le righe sfumano in entrata a vetro quasi aperto (se le vedi sporgere in basso, alza 140).
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(140))
             guard let self, !self.closed else { return }
@@ -1173,23 +1206,25 @@ private final class PickerOverlayController: UIViewController, UIGestureRecogniz
         }
     }
 
-    /// Aperto: la cornice non ritaglia più, così il vetro può crescere e rimpicciolirsi (armi nascoste)
-    /// e la bolla può sporgere un po' senza essere tagliata.
-    private func settleOpen() {
-        guard !closed else { return }
-        container.clipsToBounds = false
-        container.layer.cornerRadius = 0
-        container.frame = CGRect(x: finalX, y: sourceFrame.minY, width: panelWidth, height: maxHeight)
-        hosting.view.frame = CGRect(x: 0, y: 0, width: panelWidth, height: maxHeight)
+    /// Il banner SwiftUI cambia altezza (armi assorbite, lista che scorre): il vetro lo segue.
+    private func panelHeightChanged(_ height: CGFloat) {
+        guard revealStarted, !closed, height > 0 else { return }
+        let h = min(height, maxHeight)
+        guard abs(glass.frame.height - h) > 0.5 else { return }
+        UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
+                       options: [.allowUserInteraction, .beginFromCurrentState]) {
+            self.glass.frame.size.height = h
+        }
     }
 
     // MARK: Chiusura
 
-    /// A rovescio: prima sfumano le righe, poi la cornice si richiude sul tasto (che nel frattempo può essere
-    /// cambiato: ora c'è un'altra arma) e per ultimo si dissolve, mentre il tasto torna.
-    func close(to newSource: CGRect, completion: @escaping () -> Void) {
+    /// A rovescio: prima sfumano le righe, poi il vetro si richiude sul tasto. La cornice del tasto si legge
+    /// solo a chiusura partita (`newSource`), quando ha smesso di cambiare misura.
+    func close(to newSource: @escaping () -> CGRect, completion: @escaping () -> Void) {
         guard !closed else { return }
         closed = true
+        reveal.onPanelHeight = nil
         guard revealStarted else {                 // non era ancora partita l'apertura: niente da richiudere
             completion()
             return
@@ -1199,27 +1234,22 @@ private final class PickerOverlayController: UIViewController, UIGestureRecogniz
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(80))
             guard let self else { return }
-            let h = min(max(self.reveal.panelHeight, 1), self.maxHeight)
-            // La cornice torna alle misure del vetro visibile (senza animazione) e riprende a ritagliare…
-            self.container.clipsToBounds = true
-            self.container.layer.cornerRadius = 26
-            self.container.frame = CGRect(x: self.finalX, y: self.sourceFrame.minY, width: self.panelWidth, height: h)
-            self.hosting.view.frame = CGRect(x: 0, y: 0, width: self.panelWidth, height: self.maxHeight)
-            // …poi si richiude sul tasto.
+            let end = self.glassFrame(for: newSource())
             UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
                            options: [.beginFromCurrentState]) {
-                self.container.frame = newSource
-                self.hosting.view.frame = CGRect(x: self.finalX - newSource.minX, y: 0,
-                                                 width: self.panelWidth, height: self.maxHeight)
-                self.container.layer.cornerRadius = min(newSource.height / 2, 26)
+                self.glass.frame = end
             } completion: { _ in
-                self.reveal.coversButton = false        // il tasto torna con una breve dissolvenza
-                UIView.animate(withDuration: 0.12, animations: {
-                    self.container.alpha = 0
-                }, completion: { _ in
+                // Il tasto vero torna di colpo e il banner resta ancora un attimo sopra di lui:
+                // sono lo stesso vetro nello stesso punto, quindi non si vede nessun salto.
+                self.reveal.coversButton = false
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(60))
                     completion()
-                })
+                }
             }
+            // La scritta del tasto sfuma di nuovo in cima mentre il vetro si richiude.
+            try? await Task.sleep(for: .milliseconds(180))
+            self.reveal.labelVisible = true
         }
     }
 }
@@ -1271,6 +1301,8 @@ private final class PickerPresenterCoordinator {
         reveal.panelHeight = 0
         reveal.rowsVisible = false
         let source = anchor.convert(anchor.bounds, to: window)
+        reveal.sourceHeight = source.height
+        reveal.labelVisible = true
         let controller = PickerOverlayController(root: root,
                                                  reveal: reveal,
                                                  source: source,
@@ -1286,12 +1318,15 @@ private final class PickerPresenterCoordinator {
     private func close() {
         guard let overlay, !isClosing else { return }
         isClosing = true
-        // Il tasto può essere cambiato (altra arma): ci si richiude sulla sua cornice di adesso.
-        var newSource = overlay.sourceFrame
-        if let anchor, let window = anchor.window {
-            newSource = anchor.convert(anchor.bounds, to: window)
-        }
-        overlay.close(to: newSource) { [weak self] in
+        // La cornice del tasto si legge solo quando parte la chiusura (vedi PickerOverlayController.close).
+        overlay.close(to: { [weak self] in
+            var frame = overlay.sourceFrame
+            if let anchor = self?.anchor, let window = anchor.window {
+                frame = anchor.convert(anchor.bounds, to: window)
+            }
+            self?.reveal?.sourceHeight = frame.height
+            return frame
+        }) { [weak self] in
             self?.finishClose()
         }
     }
@@ -1306,6 +1341,7 @@ private final class PickerPresenterCoordinator {
 
     /// La vista del tasto sta sparendo (cambio di pagina...): niente animazioni, via subito.
     func teardown() {
+        reveal?.onPanelHeight = nil
         overlay?.dismiss(animated: false)
         overlay = nil
         isClosing = false
