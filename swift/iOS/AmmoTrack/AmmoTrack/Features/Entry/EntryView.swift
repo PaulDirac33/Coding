@@ -504,14 +504,8 @@ struct EntryView: View {
     var provenanceRow: some View {
         ZStack {
             if look.selector {
-                Picker("Provenienza", selection: provenanceBinding) {
-                    ForEach(Provenance.allCases) { p in
-                        Text(p.label).tag(p)
-                    }
-                }
-                .pickerStyle(.segmented)                  // quello di sistema: Liquid Glass vero, la lente scorre
-                .frame(width: EntryLayout.controlWidth)
-                .transition(.opacity)
+                ProvenanceSelector(selection: provenanceBinding)
+                    .transition(.opacity)
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: Provenance.bought.symbol)
@@ -524,7 +518,7 @@ struct EntryView: View {
                 .transition(.opacity)
             }
         }
-        .frame(width: EntryLayout.columnWidth, height: 40)
+        .frame(width: EntryLayout.columnWidth, height: ProvenanceSelector.height)
         .overlay(alignment: .leading) { undoButton }
         .overlay(alignment: .trailing) { redoButton }
     }
