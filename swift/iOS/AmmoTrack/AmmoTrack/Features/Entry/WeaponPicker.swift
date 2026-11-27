@@ -1,23 +1,57 @@
 //
 //  WeaponPicker.swift
 //
-//  Tasto di vetro con l'arma scelta (il calibro è quello dell'arma). Cliccandolo si apre un banner di vetro
-//  con le armi preimpostate, raggruppate per calibro: il tasto si trasforma nel banner
-//  (GlassEffectContainer + glassEffectID, Liquid Glass vero).
+//  Tasto di vetro con l'arma scelta (il calibro è quello dell'arma). Toccandolo il tasto «si allunga» e diventa
+//  un banner di vetro con le armi preimpostate, raggruppate per calibro: come il menù del filtro armi nella
+//  pagina Dati, ma con righe fatte a mano (loghi, cartucce, bolla di selezione, bollicine).
 //
-//  FLUIDITÀ (apertura): il tasto chiuso non è «interactive» (rimbalzo del tocco e trasformazione insieme si
-//  disturbavano); il contenuto del banner compare un attimo DOPO che il vetro ha cominciato a espandersi;
-//  cartucce e Beretta sono immagini già disegnate (IconCache.swift); le bolle piccole non sono vetro in più;
-//  la bolla grande diventa vetro solo mentre la premi.
+//  COME SI APRE (e perché prima scattava)
+//  La trasformazione del vetro fatta in SwiftUI (GlassEffectContainer + glassEffectID) ricalcola il vetro a ogni
+//  fotogramma, nel processo dell'app: sul telefono scattava anche in Release. Il menù di sistema è fluido perché
+//  lo anima il sistema. Qui si fa lo stesso con Core Animation:
+//   - il banner (WeaponPickerPanel) è una vista SwiftUI già a misura piena, dentro una finestra UIKit trasparente
+//     (PickerPresenter, in fondo al file);
+//   - l'apertura è l'animazione di una cornice UIKit che passa dal tasto al banner (con gli angoli che si
+//     arrotondano) e lo scopre dall'alto: il lavoro lo fa il render server, non SwiftUI;
+//   - le righe sfumano un attimo dopo, a banner quasi aperto; in chiusura sfumano prima e la cornice torna sul tasto;
+//   - nessuna freccia e nessun ridimensionamento di sistema: le armi nascoste si assorbono con la solita molla SwiftUI.
+//  Il tasto sparisce mentre il banner lo copre (stessa posizione) e riappare alla chiusura.
+//  Ripiego: `weaponPickerUsesOverlay = false` in AppearanceSettings.swift usa il popover di sistema.
 //
-//  Nel banner la scelta è una "bolla" di vetro che scorre in verticale come la lente di GlassSegmented:
-//  premi e trascini, rilasci sulla voce che vuoi. Le armi si aggiungono dalla pagina Armi.
+//  LA SCELTA
+//  Nel banner la scelta è una bolla di vetro vero che scorre in verticale come la lente di GlassSegmented: premi e
+//  trascini, rilasci sulla voce che vuoi. Passando su una voce c'è una vibrazione leggera, come nei menù.
+//  Se le voci non entrano nel banner la lista NON si scorre col dito (si perderebbe la scelta): tieni la bolla sul
+//  bordo in basso (o in alto) e la lista scorre una voce alla volta; la vibrazione scandisce i passi.
+//  Le armi si aggiungono dalla pagina Armi.
 //
 //  Se un calibro non ha ancora armi compare la voce "Senza arma": serve anche per le entrate
 //  (acquisti e ricariche non hanno un'arma) e per lo storico importato.
 //
 
 import SwiftUI
+import Combine
+import UIKit
+
+/// Separatore fra calibro e matricola. Il trattino «–» (en dash) è un unico segno, come il "--" di LaTeX.
+/// Alternative: " • " oppure " - ".
+private let pickerSeparator = "  •  "
+
+// MARK: - Stato condiviso
+
+/// Stato condiviso fra il tasto, la presentazione UIKit e il banner.
+@MainActor
+final class PickerReveal: ObservableObject {
+    /// true = le righe si vedono (da poco dopo l'inizio dell'apertura fino all'inizio della chiusura).
+    @Published var rowsVisible = false
+    /// true = il banner copre il tasto: il tasto sparisce, per non vedere due vetri sovrapposti.
+    @Published var coversButton = false
+    /// Altezza attuale del vetro del banner. La scrive il banner, la leggono l'apertura e la chiusura.
+    /// Non è pubblicata: cambia di continuo e non serve ridisegnare niente.
+    var panelHeight: CGFloat = 0
+}
+
+// MARK: - Tasto
 
 struct WeaponPicker: View {
     @EnvironmentObject var store: DataStore
@@ -26,111 +60,66 @@ struct WeaponPicker: View {
     @Binding var isOpen: Bool
     var maxPanelHeight: CGFloat = 360     // la decide EntryView: dal tasto fino al fondo della pagina
 
-    @Namespace private var ns
+    @StateObject private var reveal = PickerReveal()
 
-    private let buttonWidth: CGFloat = 320
-    private let panelWidth: CGFloat = EntryLayout.controlWidth
     private let compactHeight: CGFloat = 44             // altezza del tasto quando c'è solo il calibro
     private let compactCartridgeLength: CGFloat = 64    // lunghezza della cartuccia orizzontale (in punti)
 
-    /// Spazio di coordinate in cui le righe dicono dove stanno (serve alla bolla).
-    private let rowsSpace = "pickerRows"
-    /// Spazio di coordinate dell'area visibile del banner (serve a sapere quali righe si vedono).
-    private let viewportSpace = "pickerViewport"
-    /// Margine sopra e sotto le righe dentro l'area che scorre: lascia posto alla bolla premuta, che sporge di 3 pt.
-    private let scrollPad: CGFloat = 4
-    /// Altezza riservata ai pallini "ci sono altre voci" in alto o in basso.
-    private let moreStrip: CGFloat = 18
-
-    /// Chiusura del banner dopo la scelta di una voce: più lenta dell'apertura (che resta 0,42 / 0,82).
-    private static var closeAnimation: Animation {
-        .spring(response: 0.5, dampingFraction: 0.88)
-    }
-    /// Separatore fra calibro e matricola. Il trattino «–» (en dash) è un unico segno, come il "--" di LaTeX.
-    /// Alternative: " • " oppure " - ".
-    private static let separator = "  •  "
-    /// Animazione di assorbimento e comparsa delle armi: la stessa per righe e altezza del banner.
-    private static var absorbAnimation: Animation {
-        .spring(response: 0.42, dampingFraction: 0.86)
-    }
-
-    /// Come entrano ed escono le righe delle armi: sfumano in fretta e si restringono verso la riga del calibro.
-    private static var absorbTransition: AnyTransition {
-        AnyTransition.opacity.animation(.easeOut(duration: 0.18))
-            .combined(with: .scale(scale: 0.92, anchor: .top))
-    }
-
-    /// Posizione di ogni riga, raccolta dalle righe stesse.
-    @State private var rowFrames: [String: CGRect] = [:]
-    /// Altezza che le righe avrebbero senza scorrimento (misurata quando il banner è aperto).
-    @State private var rowsHeight: CGFloat = 0
-    /// Calibri con le armi assorbite (id separati da virgola). Si ricorda anche fra un avvio e l'altro.
-    @AppStorage("picker.collapsedCalibers") private var collapsedRaw = ""
-    /// Posizione delle bolle piccole (una per calibro che ha armi), raccolta dalle righe.
-    @State private var toggleFrames: [String: CGRect] = [:]
-    /// false = il banner appena aperto mostra le righe senza ScrollView; diventa true a trasformazione finita.
-    @State private var scrollReady = false
-    /// Numero dell'ultima apertura: i timer delle aperture precedenti non fanno più nulla.
-    @State private var scrollToken = SyncToken()
-    /// Posizione in alto delle righe rispetto all'area visibile del banner (cambia quando scorri).
-    @State private var contentTop: CGFloat = 0
-    /// false = il banner appena aperto è solo vetro vuoto; le righe arrivano un attimo dopo (vedi FLUIDITÀ).
-    @State private var contentReady = false
-    /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
-    /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
-    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.36, dampingFraction: 0.65)))
-    private var drag: CGFloat? = nil
-    /// Calibro la cui bolla piccola è premuta in questo momento (nil = nessuna).
-    @GestureState private var pressedToggle: String? = nil
-
     var body: some View {
-        Group {
-            if weaponPickerMorphs {
-                morphing
-            } else {
-                fading
-            }
-        }
-        .onChange(of: isOpen) { _, open in
-            if !open { contentReady = false }
+        if weaponPickerUsesOverlay {
+            overlayVersion
+        } else {
+            popoverVersion
         }
     }
 
     // MARK: Le due versioni
 
-    /// Il tasto e il banner sono lo stesso pezzo di vetro, che si trasforma.
-    private var morphing: some View {
-        GlassEffectContainer(spacing: 12) {
-            if isOpen {
-                panel
-                    .liquidGlass(cornerRadius: 26)
-                    .animation(Self.absorbAnimation, value: collapsedRaw)
-                    .glassMorphID("weaponPicker", in: ns)
-            } else {
-                pickerButton
-                    .glassCapsule()                      // NON interactive: vedi FLUIDITÀ in cima al file
-                    .glassMorphID("weaponPicker", in: ns)
+    /// Il tasto «si allunga» nel banner. La presentazione è `PickerPresenter` (UIKit), agganciata al tasto.
+    private var overlayVersion: some View {
+        pickerButton
+            .glassCapsule()                      // NON interactive: il banner lo sostituisce subito
+            // Mentre il banner è aperto lo copre esattamente: il tasto sparisce all'istante e torna con una
+            // breve dissolvenza alla chiusura.
+            .opacity(reveal.coversButton ? 0 : 1)
+            .animation(reveal.coversButton ? nil : Animation.easeOut(duration: 0.12), value: reveal.coversButton)
+            .background {
+                PickerPresenter(isPresented: $isOpen,
+                                reveal: reveal,
+                                panelWidth: EntryLayout.controlWidth,
+                                maxHeight: maxPanelHeight,
+                                panel: panel(drawsGlass: true))
             }
-        }
+            // Vibrazione: leggera all'apertura, di selezione a ogni scelta (come i menù di sistema).
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: isOpen) { _, opened in opened }
+            .sensoryFeedback(.selection, trigger: target)
     }
 
-    /// Versione più leggera (weaponPickerMorphs = false): il banner si apre con una dissolvenza.
-    private var fading: some View {
-        ZStack(alignment: .top) {
-            if isOpen {
-                panel
-                    .liquidGlass(cornerRadius: 26)
-                    .animation(Self.absorbAnimation, value: collapsedRaw)
-                    .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
-            } else {
-                pickerButton
-                    .glassCapsule()
-                    .transition(.opacity)
+    /// Ripiego: popover di sistema (con la freccia). `drawsGlass: false` perché il vetro lo mette il popover.
+    private var popoverVersion: some View {
+        pickerButton
+            .glassCapsule()
+            .popover(isPresented: $isOpen, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                panel(drawsGlass: false)
+                    .presentationCompactAdaptation(.popover)
             }
-        }
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: isOpen) { _, opened in opened }
+            .sensoryFeedback(.selection, trigger: target)
     }
 
-    // MARK: Tasto
+    /// Il banner, con tutto quello che serve a una finestra a sé: l'ambiente (lo store) e il tema scuro
+    /// non passano da soli a una vista presentata da UIKit.
+    private func panel(drawsGlass: Bool) -> some View {
+        WeaponPickerPanel(reveal: reveal,
+                          target: $target,
+                          isOpen: $isOpen,
+                          maxPanelHeight: maxPanelHeight,
+                          drawsGlass: drawsGlass)
+            .environmentObject(store)
+            .preferredColorScheme(.dark)
+    }
+
+    // MARK: Aspetto del tasto
 
     private var currentWeapon: Weapon? { store.config.weapon(target.weaponID) }
     /// Solo il calibro, nessuna arma: il tasto si riduce.
@@ -155,12 +144,12 @@ struct WeaponPicker: View {
         guard let w = currentWeapon else { return "Senza arma" }
         var parts = [store.config.caliberName(target.caliberID)]
         if !w.serial.isEmpty { parts.append(w.serial) }
-        return parts.joined(separator: Self.separator)
+        return parts.joined(separator: pickerSeparator)
     }
 
     private var pickerButton: some View {
         Button {
-            openPicker()
+            isOpen = true
         } label: {
             if isCaliberOnly {
                 compactLabel
@@ -169,24 +158,6 @@ struct WeaponPicker: View {
             }
         }
         .buttonStyle(.plain)
-    }
-    /// Apre il banner. Prima di aprire azzera lo scorrimento, così il banner nasce già senza ScrollView;
-    /// la ScrollView arriva a trasformazione finita. Ogni apertura invalida i timer delle precedenti.
-    private func openPicker() {
-        scrollReady = false
-        contentReady = false
-        scrollToken.value += 1
-        let ticket = scrollToken.value
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { isOpen = true }
-        // Il vetro comincia a espandersi vuoto (leggero); le righe arrivano subito dopo con una dissolvenza.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            guard scrollToken.value == ticket, isOpen else { return }
-            withAnimation(.easeOut(duration: 0.2)) { contentReady = true }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            guard scrollToken.value == ticket, isOpen else { return }
-            scrollReady = true
-        }
     }
 
     /// Con un'arma: miniatura, nome e calibro/matricola sulla seconda riga. Nessuna larghezza fissa:
@@ -233,7 +204,100 @@ struct WeaponPicker: View {
         .contentShape(Capsule())
     }
 
-    // MARK: Banner
+}
+
+// MARK: - Banner
+
+/// Il banner: righe, bolla di selezione, bollicine. È una vista a sé (con il suo stato) perché vive in una
+/// finestra UIKit separata (vedi PickerPresenter): tutto quello che serve arriva dai parametri.
+struct WeaponPickerPanel: View {
+    @EnvironmentObject var store: DataStore
+    @ObservedObject var reveal: PickerReveal
+    @Binding var target: EntryTarget
+    @Binding var isOpen: Bool
+    var maxPanelHeight: CGFloat = 360     // la decide EntryView: dal tasto fino al fondo della pagina
+    /// true = il banner disegna il proprio vetro (presentazione UIKit); false = lo disegna chi lo contiene (popover).
+    var drawsGlass = true
+
+    private let panelWidth: CGFloat = EntryLayout.controlWidth
+
+    /// Spazio di coordinate in cui le righe dicono dove stanno (serve alla bolla).
+    private let rowsSpace = "pickerRows"
+    /// Margine sopra e sotto le righe dentro l'area visibile: lascia posto alla bolla premuta, che sporge di 3 pt.
+    private let scrollPad: CGFloat = 4
+    /// Altezza riservata ai pallini "ci sono altre voci" in alto o in basso.
+    private let moreStrip: CGFloat = 18
+
+    /// Animazione di assorbimento e comparsa delle armi: la stessa per righe e altezza del banner.
+    private static var absorbAnimation: Animation {
+        .spring(response: 0.42, dampingFraction: 0.86)
+    }
+
+    /// Come entrano ed escono le righe delle armi: sfumano in fretta e si restringono verso la riga del calibro.
+    private static var absorbTransition: AnyTransition {
+        AnyTransition.opacity.animation(.easeOut(duration: 0.18))
+            .combined(with: .scale(scale: 0.92, anchor: .top))
+    }
+
+    /// Scorrimento a bordo: dopo quanti secondi che la bolla è sul bordo parte il primo passo…
+    private static let scrollDwell: Double = 0.22
+    /// …e ogni quanti secondi si fa un passo (una voce) finché resta lì.
+    private static let scrollInterval: Double = 0.30
+
+    /// Posizione di ogni riga, raccolta dalle righe stesse.
+    @State private var rowFrames: [String: CGRect] = [:]
+    /// Altezza che le righe avrebbero senza ritaglio (misurata quando il banner è aperto).
+    @State private var rowsHeight: CGFloat = 0
+    /// Calibri con le armi assorbite (id separati da virgola). Si ricorda anche fra un avvio e l'altro.
+    @AppStorage("picker.collapsedCalibers") private var collapsedRaw = ""
+    /// Posizione delle bolle piccole (una per calibro che ha armi), raccolta dalle righe.
+    @State private var toggleFrames: [String: CGRect] = [:]
+    /// Quante voci sono scorse fuori dall'alto del banner (0 = la lista è all'inizio). Vedi `stepScroll`.
+    @State private var topIndex = 0
+    /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
+    /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
+    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.36, dampingFraction: 0.65)))
+    private var drag: CGFloat? = nil
+    /// Calibro la cui bolla piccola è premuta in questo momento (nil = nessuna).
+    @GestureState private var pressedToggle: String? = nil
+
+    /// Posizione del dito nello spazio delle righe all'ultimo evento del tocco, e `contentTop` di quel momento:
+    /// servono a seguire il dito quando la lista scorre sotto di lui (il dito fermo non manda eventi).
+    @State private var pointerRowsY: CGFloat? = nil
+    @State private var touchContentTop: CGFloat = 0
+    /// Voce sotto il dito: a ogni cambio c'è una vibrazione (nil = nessun tocco).
+    @State private var hoverKey: String? = nil
+    /// Si incrementa a ogni passo di scorrimento: serve alla vibrazione.
+    @State private var scrollTick = 0
+    /// Il ciclo che scorre la lista mentre la bolla è sul bordo (esiste solo durante il tocco).
+    @State private var autoScroll: Task<Void, Never>? = nil
+
+    var body: some View {
+        // Le righe si vedono un attimo dopo l'inizio dell'apertura e spariscono per prime alla chiusura:
+        // lo decide PickerPresenter con `reveal.rowsVisible`.
+        let content = panelContent
+            .opacity(reveal.rowsVisible ? 1 : 0)
+            .animation(.easeOut(duration: reveal.rowsVisible ? 0.22 : 0.12), value: reveal.rowsVisible)
+            .allowsHitTesting(reveal.rowsVisible)
+        return Group {
+            if drawsGlass {
+                content
+                    .liquidGlass(cornerRadius: 26)
+                    .animation(Self.absorbAnimation, value: collapsedRaw)
+                    // L'altezza del vetro serve alla presentazione (apertura e chiusura) e ai tocchi.
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reveal.panelHeight = $0 }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                content
+                    .onAppear { reveal.rowsVisible = true }
+            }
+        }
+        .ignoresSafeArea()
+        .onChange(of: collapsedRaw) { topIndex = 0 }          // assorbendo o espandendo la lista torna all'inizio
+        .onDisappear { stopAutoScroll() }
+    }
+
+    // MARK: Misure
 
     private var rowCount: Int {
         store.config.calibers.reduce(0) { total, cal in
@@ -282,48 +346,52 @@ struct WeaponPicker: View {
         return max(0, firstTop + contentTop - (3 + moreStrip))
     }
 
-    /// Altezza del banner finché le righe non ci sono ancora (poco diversa da quella finale).
-    private var placeholderHeight: CGFloat {
-        let content = rowsHeight > 0 ? rowsHeight : fullEstimate
-        return (isLimited ? viewportHeight : content) + 20
+
+    // MARK: Contenuto
+
+    /// Quanto è scorsa la lista: la prima voce visibile è la numero `topIndex`, e va a posarsi subito sotto i pallini.
+    /// Si scorre a voci intere, non a pixel: così le voci che escono dall'alto "si assorbono" con la stessa animazione
+    /// di quelle nascoste dal bordo in basso.
+    private var scrollOffset: CGFloat {
+        guard topIndex > 0 else { return 0 }
+        let spans = orderedSpans
+        guard spans.count > 1 else { return 0 }
+        let k = min(topIndex, spans.count - 1)
+        return max(0, spans[k].minY + scrollPad - 3 - moreStrip)
     }
 
-    private var panel: some View {
-        Group {
-            if contentReady {
-                panelContent
-            } else {
-                Color.clear
-                    .frame(width: panelWidth, height: placeholderHeight)
+    /// Posizione in alto delle righe rispetto all'area visibile del banner (cambia quando la lista scorre).
+    private var contentTop: CGFloat { scrollPad - scrollOffset }
+
+    /// Le righe in ordine dall'alto in basso, ognuna con la zona che occupa (per un calibro, intestazione compresa).
+    private var orderedSpans: [(key: String, minY: CGFloat, maxY: CGFloat)] {
+        rowFrames
+            .map { (k, r) in
+                let s = rowSpan(k, r)
+                return (key: k, minY: s.minY, maxY: s.maxY)
             }
-        }
+            .sorted { $0.minY < $1.minY }
     }
 
     private var panelContent: some View {
         let shift = topShift
         return Group {
             if isLimited {
-                Group {
-                    if scrollReady {
-                        ScrollView { rows.padding(.horizontal, 10).padding(.vertical, scrollPad) }
-                            .scrollIndicators(.never)
-                    } else {
-                        rows
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, scrollPad)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(height: viewportHeight, alignment: .top)       // altezza piena: lo scorrimento non cambia
-                .coordinateSpace(.named(viewportSpace))               // PRIMA dello spostamento, sennò la misura si morde la coda
-                .offset(y: -shift)                                    // le voci salgono
-                .frame(height: max(shownHeight - shift, 0), alignment: .top)   // il banner si accorcia dal basso
-                .clipped()
-                .animation(Self.absorbAnimation, value: visibility.hidden)
+                // Le voci non entrano: l'area visibile ritaglia le righe, che non si scorrono col dito
+                // (il tocco serve alla scelta) ma a voci intere con `stepScroll`.
+                rows
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, scrollPad)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .offset(y: -scrollOffset)                             // la lista scorsa
+                    .frame(height: viewportHeight, alignment: .top)       // altezza piena dell'area visibile
+                    .offset(y: -shift)                                    // le voci salgono
+                    .frame(height: max(shownHeight - shift, 0), alignment: .top)   // il banner si accorcia dal basso
+                    .clipped()
+                    .animation(Self.absorbAnimation, value: visibility.hidden)
             } else {
                 rows
                     .padding(.horizontal, 10)
-                    .coordinateSpace(.named(viewportSpace))
             }
         }
         .overlay(alignment: .top) { moreDots(visibility.above, top: true) }
@@ -331,6 +399,7 @@ struct WeaponPicker: View {
         .padding(.vertical, 10)
         .frame(width: panelWidth)
     }
+
     /// Tre bollicine: dicono che sopra o sotto ci sono altre voci (scorri, o alza la finestra).
     private func moreDots(_ shown: Bool, top: Bool) -> some View {
         ZStack {
@@ -359,10 +428,13 @@ struct WeaponPicker: View {
         .onPreferenceChange(RowFramesKey.self) { if rowFrames != $0 { rowFrames = $0 } }
         .onPreferenceChange(ToggleFramesKey.self) { if toggleFrames != $0 { toggleFrames = $0 } }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(viewportSpace)).minY } action: { contentTop = $0 }
         .background(alignment: .topLeading) { lens }
         .contentShape(Rectangle())
         .gesture(pickGesture)
+        // Vibrazione leggera quando la bolla passa da una voce all'altra (non alla prima pressione), come nei menù…
+        .sensoryFeedback(.selection, trigger: hoverKey) { old, new in old != nil && new != nil }
+        // …e a ogni passo dello scorrimento a bordo.
+        .sensoryFeedback(.selection, trigger: scrollTick)
     }
 
     @ViewBuilder
@@ -412,7 +484,7 @@ struct WeaponPicker: View {
                       space: rowsSpace,
                       weapon: w,
                       title: w.name,
-                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(Self.separator)\(w.serial)",
+                      subtitle: w.serial.isEmpty ? cal.name : "\(cal.name)\(pickerSeparator)\(w.serial)",
                       faded: unseen.contains(key(EntryTarget(caliberID: cal.id, weaponID: w.id))))
                 .transition(Self.absorbTransition)
         }
@@ -447,7 +519,8 @@ struct WeaponPicker: View {
                withAnimation(.spring(response: 0.36, dampingFraction: 0.65)) { target = t }
            }
            DispatchQueue.main.asyncAfter(deadline: .now() + (changed ? 0.30 : 0)) {
-               withAnimation(Self.closeAnimation) { isOpen = false }
+               // La chiusura (le righe sfumano, poi il banner si richiude sul tasto) la fa PickerPresenter quando isOpen diventa false.
+               isOpen = false
            }
        }
 
@@ -475,6 +548,7 @@ struct WeaponPicker: View {
     }
 
     /// Premi = la bolla corre dal puntatore; trascini = lo segue; rilasci = sceglie la riga sotto il puntatore.
+    /// Tenendo la bolla sul bordo in basso o in alto la lista scorre (vedi `startAutoScroll`).
     private var pickGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(rowsSpace))
             .updating($drag) { g, state, transaction in
@@ -482,29 +556,117 @@ struct WeaponPicker: View {
                 guard toggleHit(g.startLocation) == nil else { return }
                 // Al primo tocco la bolla raggiunge il punto con una molla, poi segue senza ritardo.
                 transaction.animation = (state == nil)
-                ? Animation.spring(response: 0.28, dampingFraction: 0.7)                    : nil
+                ? Animation.spring(response: 0.28, dampingFraction: 0.7) : nil
                 state = g.location.y
             }
             .updating($pressedToggle) { g, state, _ in
                 state = toggleHit(g.startLocation)
             }
+            .onChanged { g in
+                guard toggleHit(g.startLocation) == nil else { return }
+                pointerRowsY = g.location.y
+                touchContentTop = contentTop
+                let k = nearestKey(toY: g.location.y)
+                if k != hoverKey { hoverKey = k }
+                startAutoScroll()
+            }
             .onEnded { g in
+                // Il dito può essere fermo mentre la lista scorre: la posizione vera si ricava da qui.
+                let y = currentPointerY() ?? g.location.y
+                stopAutoScroll()
+                hoverKey = nil
+                pointerRowsY = nil
                 if let id = toggleHit(g.startLocation) {
                     // Inizia e finisce sulla stessa bolla piccola: assorbe o espande. Selezione e banner restano com'erano.
                     if toggleHit(g.location) == id { toggleAbsorbed(id) }
                 } else {
-                    finish(at: g.location)
+                    finish(at: CGPoint(x: g.location.x, y: y))
                 }
             }
     }
 
+    /// La riga più vicina all'altezza data (fra quelle visibili per intero).
+    private func nearestKey(toY y: CGFloat) -> String? {
+        selectableFrames.min(by: { abs($0.value.midY - y) < abs($1.value.midY - y) })?.key
+    }
+
     private func finish(at point: CGPoint) {
-            // Sceglie la riga più vicina al punto di rilascio: è quella su cui la bolla si è già fermata,
-            // anche se rilasci fra due righe o su un'intestazione di calibro.
-            guard let hit = selectableFrames.min(by: { abs($0.value.midY - point.y) < abs($1.value.midY - point.y) })?.key,
-                  let t = targets[hit] else { return }
-            choose(t)
+        // Sceglie la riga più vicina al punto di rilascio: è quella su cui la bolla si è già fermata,
+        // anche se rilasci fra due righe o su un'intestazione di calibro.
+        guard let hit = nearestKey(toY: point.y), let t = targets[hit] else { return }
+        choose(t)
+    }
+
+    // MARK: Scorrimento a bordo
+
+    /// Dove sta il dito adesso, nello spazio delle righe (tiene conto di quanto la lista è scorsa dall'ultimo evento).
+    private func currentPointerY() -> CGFloat? {
+        guard let y = pointerRowsY else { return nil }
+        return y + touchContentTop - contentTop
+    }
+
+    /// -1 = il dito è sopra la prima voce visibile e sopra c'è altro; +1 = è sotto l'ultima e sotto c'è altro; 0 = no.
+    /// «Sotto l'ultima voce» include la fascia dei pallini e anche lo spazio fuori dal banner.
+    private func scrollDirection(forY y: CGFloat) -> Int {
+        guard isLimited else { return 0 }
+        let rects = selectableFrames.values
+        guard let firstTop = rects.map({ $0.minY }).min(),
+              let lastBottom = rects.map({ $0.maxY }).max() else { return 0 }
+        let v = visibility
+        if y > lastBottom, v.below { return 1 }
+        if y < firstTop, v.above { return -1 }
+        return 0
+    }
+
+    /// Un passo: una voce in più (o in meno) fuori dall'alto.
+    private func stepScroll(down: Bool) {
+        let count = rowFrames.count
+        let v = visibility
+        var changed = false
+        withAnimation(Self.absorbAnimation) {
+            if down, v.below {
+                topIndex = min(topIndex + 1, max(count - 1, 0))
+                changed = true
+            } else if !down, v.above {
+                topIndex = max(topIndex - 1, 0)
+                changed = true
+            }
         }
+        if changed { scrollTick += 1 }
+    }
+
+    /// Mentre il dito è sul banner: se la bolla sta sul bordo (sotto l'ultima voce o sopra la prima) per un po',
+    /// la lista scorre una voce, poi un'altra ogni `scrollInterval` finché resta lì. Il dito fermo non manda
+    /// eventi, per questo serve un ciclo.
+    private func startAutoScroll() {
+        guard isLimited, autoScroll == nil else { return }
+        autoScroll = Task { @MainActor in
+            var inZoneSince: Date? = nil
+            var lastStep = Date.distantPast
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(40))
+                guard let y = currentPointerY() else { continue }
+                let dir = scrollDirection(forY: y)
+                guard dir != 0 else {
+                    inZoneSince = nil
+                    continue
+                }
+                let now = Date()
+                let since = inZoneSince ?? now
+                inZoneSince = since
+                if now.timeIntervalSince(since) >= Self.scrollDwell,
+                   now.timeIntervalSince(lastStep) >= Self.scrollInterval {
+                    stepScroll(down: dir > 0)
+                    lastStep = now
+                }
+            }
+        }
+    }
+
+    private func stopAutoScroll() {
+        autoScroll?.cancel()
+        autoScroll = nil
+    }
 
     /// Chiavi delle righe dei calibri che hanno la bolla piccola.
     private var shortKeys: Set<String> {
@@ -523,7 +685,9 @@ struct WeaponPicker: View {
     private func lensRect() -> CGRect? {
         guard let full = rowFrames[selectedKey] else { return nil }
         let rest = restRect(selectedKey, full)
-        guard let y = drag else { return rest }
+        guard let dragY = drag else { return rest }
+        // Se nel frattempo la lista è scorsa (dito fermo sul bordo), la posizione del dito si corregge.
+        let y = dragY + touchContentTop - contentTop
 
         let ordered = selectableFrames.sorted { $0.value.midY < $1.value.midY }
         guard let first = ordered.first, let last = ordered.last else { return rest }
@@ -630,7 +794,8 @@ struct WeaponPicker: View {
                                            minY: r.minY, height: r.height,
                                            wallTop: walls.top, wallBottom: walls.bottom,
                                            wallLeft: walls.left, wallRight: walls.right))
-                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: rowFrames)
+                // Con le righe ancora invisibili (apertura) la bolla va subito al suo posto, senza scivolare.
+                .animation(reveal.rowsVisible ? Animation.spring(response: 0.42, dampingFraction: 0.82) : nil, value: rowFrames)
                 .opacity(lensHidden ? 0 : 1)
                 .animation(.easeOut(duration: 0.15), value: lensHidden)
         }
@@ -744,43 +909,28 @@ private struct PickerLensEffect: GeometryEffect {
     }
 }
 
-/// La bolla: a riposo una capsula chiara (come la lente di GlassSegmented), premuta diventa vetro vero.
-/// Le due versioni esistono sempre e cambiano solo opacità, così si muovono insieme (niente "doppione").
+/// La bolla di selezione: vetro vero (Liquid Glass) sempre, a riposo e mentre la premi.
+/// Premuta si fa un po' più luminosa e proietta un'ombra più marcata.
 private struct PickerLens: View {
     let pressed: Bool
 
     var body: some View {
-        ZStack {
-            // A riposo
-            Capsule()
-                .fill(Color.white.opacity(0.14))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                .opacity(pressed ? 0 : 1)
-
-            // Premuta: vetro vero (esiste solo mentre premi, così a riposo non costa nulla)
-            if pressed {
-                glass
-                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: pressed)
-        .allowsHitTesting(false)
-    }
-
-    private var glassBase: some View {
         Color.clear
-            .glassEffect(.clear.tint(Color.white.opacity(0.12)), in: Capsule())
-    }
-
-    private var glass: some View {
-        glassBase
-            .overlay(Capsule().fill(LinearGradient(
-                colors: [Color.white.opacity(0.16), Color.clear, Color.white.opacity(0.05)],
-                startPoint: .top, endPoint: .bottom)))
-            .overlay(Capsule().strokeBorder(LinearGradient(
-                colors: [Color.white.opacity(0.80), Color.white.opacity(0.10), Color.white.opacity(0.45)],
-                startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2))
-            .shadow(color: Color.black.opacity(0.40), radius: 12, y: 4)
+            .glassEffect(.clear.tint(Color.white.opacity(pressed ? 0.14 : 0.09)), in: Capsule())
+            .overlay(
+                Capsule().fill(LinearGradient(
+                    colors: [Color.white.opacity(0.16), Color.clear, Color.white.opacity(0.05)],
+                    startPoint: .top, endPoint: .bottom))
+                .opacity(pressed ? 1 : 0.6))
+            .overlay(
+                Capsule().strokeBorder(LinearGradient(
+                    colors: [Color.white.opacity(0.80), Color.white.opacity(0.10), Color.white.opacity(0.45)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
+                .opacity(pressed ? 1 : 0.55))
+            .shadow(color: Color.black.opacity(pressed ? 0.40 : 0.14),
+                    radius: pressed ? 12 : 5, y: pressed ? 4 : 2)
+            .animation(.easeOut(duration: 0.15), value: pressed)
+            .allowsHitTesting(false)
     }
 }
 
@@ -880,5 +1030,316 @@ private struct PickerRow: View {
         .opacity(faded ? 0 : 1)
         .animation(.easeOut(duration: 0.15), value: faded)
         .id(rowKey)
+    }
+}
+
+// MARK: - Presentazione UIKit del banner
+
+/// Il contenitore del banner. Lascia passare i tocchi sotto il vetro visibile (la parte trasparente della vista
+/// SwiftUI, alta quanto il banner più grande possibile): lì i tocchi vanno allo sfondo, che chiude il banner.
+private final class PanelContainerView: UIView {
+    var visibleHeight: () -> CGFloat = { 0 }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard point.y <= visibleHeight() else { return nil }
+        return super.hitTest(point, with: event)
+    }
+}
+
+/// La finestra trasparente a tutto schermo che porta il banner. Non anima SwiftUI: anima una cornice UIKit
+/// (Core Animation, nel render server) che passa dal tasto al banner e lo scopre dall'alto, con gli angoli che
+/// si arrotondano. Il banner dentro è già disegnato a misura piena, fermo, quindi non si ricalcola niente.
+@MainActor
+private final class PickerOverlayController: UIViewController, UIGestureRecognizerDelegate {
+    let hosting: UIHostingController<AnyView>
+    /// Cornice del tasto al momento dell'apertura, in coordinate della finestra.
+    let sourceFrame: CGRect
+    var onOutsideTap: () -> Void = {}
+
+    private let container = PanelContainerView()
+    private let reveal: PickerReveal
+    private let panelWidth: CGFloat
+    private let maxHeight: CGFloat
+    private let finalX: CGFloat
+    private var revealStarted = false
+    private var closed = false
+
+    init(root: AnyView, reveal: PickerReveal, source: CGRect, windowBounds: CGRect,
+         panelWidth: CGFloat, maxHeight: CGFloat) {
+        let margin: CGFloat = 8
+        let x = source.midX - panelWidth / 2
+        self.hosting = UIHostingController(rootView: root)
+        self.reveal = reveal
+        self.sourceFrame = source
+        self.panelWidth = panelWidth
+        self.finalX = min(max(x, margin), windowBounds.width - panelWidth - margin)
+        self.maxHeight = max(120, min(maxHeight, windowBounds.maxY - source.minY - margin))
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .overFullScreen
+        overrideUserInterfaceStyle = .dark
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) non è usato")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+
+        // Un tocco fuori dal banner lo chiude (il contenitore lascia passare i tocchi sotto il vetro visibile).
+        let tap = UITapGestureRecognizer(target: self, action: #selector(backgroundTapped))
+        tap.delegate = self
+        view.addGestureRecognizer(tap)
+
+        container.backgroundColor = .clear
+        container.alpha = 0
+        container.visibleHeight = { [weak self] in self?.reveal.panelHeight ?? 0 }
+        view.addSubview(container)
+
+        addChild(hosting)
+        hosting.view.backgroundColor = .clear
+        hosting.view.isOpaque = false
+        container.addSubview(hosting.view)
+        hosting.didMove(toParent: self)
+    }
+
+    @objc private func backgroundTapped() {
+        onOutsideTap()
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.view === view
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        onOutsideTap()                       // rotazione o cambio di finestra: il banner si chiude
+    }
+
+    // MARK: Apertura
+
+    /// Mette il banner al suo posto (invisibile), aspetta che SwiftUI lo disegni e lo misuri, poi parte l'animazione.
+    /// Così il lavoro pesante (layout, misure) avviene PRIMA che l'animazione cominci.
+    func open() {
+        container.clipsToBounds = true
+        container.layer.cornerCurve = .continuous
+        container.layer.cornerRadius = sourceFrame.height / 2
+        container.frame = sourceFrame
+        hosting.view.frame = CGRect(x: finalX - sourceFrame.minX, y: 0, width: panelWidth, height: maxHeight)
+        container.alpha = 0
+        view.layoutIfNeeded()
+
+        Task { @MainActor [weak self] in
+            var tries = 0
+            while let self, self.reveal.panelHeight <= 0, tries < 12 {
+                try? await Task.sleep(for: .milliseconds(16))
+                tries += 1
+            }
+            self?.startReveal()
+        }
+    }
+
+    private func startReveal() {
+        guard !closed else { return }
+        revealStarted = true
+        let h = min(max(reveal.panelHeight, sourceFrame.height), maxHeight)
+        let end = CGRect(x: finalX, y: sourceFrame.minY, width: panelWidth, height: h)
+
+        container.alpha = 1
+        reveal.coversButton = true                // il tasto sparisce: il banner parte esattamente da lì
+
+        // La cornice (e con lei la posizione del banner dentro di lei) si muove con la stessa molla:
+        // il banner resta fermo sullo schermo, è la cornice che lo scopre.
+        UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.82, initialSpringVelocity: 0,
+                       options: [.allowUserInteraction, .beginFromCurrentState]) {
+            self.container.frame = end
+            self.hosting.view.frame = CGRect(x: 0, y: 0, width: self.panelWidth, height: self.maxHeight)
+            self.container.layer.cornerRadius = 26
+        } completion: { _ in
+            self.settleOpen()
+        }
+
+        // Le righe sfumano in entrata a banner quasi aperto.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(140))
+            guard let self, !self.closed else { return }
+            self.reveal.rowsVisible = true
+        }
+    }
+
+    /// Aperto: la cornice non ritaglia più, così il vetro può crescere e rimpicciolirsi (armi nascoste)
+    /// e la bolla può sporgere un po' senza essere tagliata.
+    private func settleOpen() {
+        guard !closed else { return }
+        container.clipsToBounds = false
+        container.layer.cornerRadius = 0
+        container.frame = CGRect(x: finalX, y: sourceFrame.minY, width: panelWidth, height: maxHeight)
+        hosting.view.frame = CGRect(x: 0, y: 0, width: panelWidth, height: maxHeight)
+    }
+
+    // MARK: Chiusura
+
+    /// A rovescio: prima sfumano le righe, poi la cornice si richiude sul tasto (che nel frattempo può essere
+    /// cambiato: ora c'è un'altra arma) e per ultimo si dissolve, mentre il tasto torna.
+    func close(to newSource: CGRect, completion: @escaping () -> Void) {
+        guard !closed else { return }
+        closed = true
+        guard revealStarted else {                 // non era ancora partita l'apertura: niente da richiudere
+            completion()
+            return
+        }
+        reveal.rowsVisible = false
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard let self else { return }
+            let h = min(max(self.reveal.panelHeight, 1), self.maxHeight)
+            // La cornice torna alle misure del vetro visibile (senza animazione) e riprende a ritagliare…
+            self.container.clipsToBounds = true
+            self.container.layer.cornerRadius = 26
+            self.container.frame = CGRect(x: self.finalX, y: self.sourceFrame.minY, width: self.panelWidth, height: h)
+            self.hosting.view.frame = CGRect(x: 0, y: 0, width: self.panelWidth, height: self.maxHeight)
+            // …poi si richiude sul tasto.
+            UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
+                           options: [.beginFromCurrentState]) {
+                self.container.frame = newSource
+                self.hosting.view.frame = CGRect(x: self.finalX - newSource.minX, y: 0,
+                                                 width: self.panelWidth, height: self.maxHeight)
+                self.container.layer.cornerRadius = min(newSource.height / 2, 26)
+            } completion: { _ in
+                self.reveal.coversButton = false        // il tasto torna con una breve dissolvenza
+                UIView.animate(withDuration: 0.12, animations: {
+                    self.container.alpha = 0
+                }, completion: { _ in
+                    completion()
+                })
+            }
+        }
+    }
+}
+
+/// Tiene il banner UIKit e lo apre o lo chiude quando `isPresented` cambia.
+@MainActor
+private final class PickerPresenterCoordinator {
+    weak var anchor: UIView?
+    var reveal: PickerReveal?
+    var panelWidth: CGFloat = 254
+    var maxHeight: CGFloat = 360
+    var root = AnyView(EmptyView())
+    var setPresented: (Bool) -> Void = { _ in }
+
+    private var overlay: PickerOverlayController?
+    private var isOpening = false
+    private var isClosing = false
+    private var wantsPresented = false
+
+    func update(isPresented: Bool) {
+        wantsPresented = isPresented
+        if isPresented {
+            if let overlay {
+                overlay.hosting.rootView = root              // il banner aperto riceve i dati aggiornati
+            } else if !isOpening {
+                scheduleOpen()
+            }
+        } else if overlay != nil, !isClosing {
+            close()
+        }
+    }
+
+    /// Non si presenta dentro l'aggiornamento di SwiftUI: si aspetta il giro successivo.
+    private func scheduleOpen() {
+        isOpening = true
+        Task { @MainActor [weak self] in
+            self?.present()
+        }
+    }
+
+    private func present() {
+        isOpening = false
+        guard wantsPresented, overlay == nil,
+              let anchor, let window = anchor.window, let reveal else { return }
+        var top = window.rootViewController
+        while let next = top?.presentedViewController { top = next }
+        guard let top else { return }
+
+        reveal.panelHeight = 0
+        reveal.rowsVisible = false
+        let source = anchor.convert(anchor.bounds, to: window)
+        let controller = PickerOverlayController(root: root,
+                                                 reveal: reveal,
+                                                 source: source,
+                                                 windowBounds: window.bounds,
+                                                 panelWidth: panelWidth,
+                                                 maxHeight: maxHeight)
+        controller.onOutsideTap = { [weak self] in self?.setPresented(false) }
+        overlay = controller
+        top.present(controller, animated: false)
+        controller.open()
+    }
+
+    private func close() {
+        guard let overlay, !isClosing else { return }
+        isClosing = true
+        // Il tasto può essere cambiato (altra arma): ci si richiude sulla sua cornice di adesso.
+        var newSource = overlay.sourceFrame
+        if let anchor, let window = anchor.window {
+            newSource = anchor.convert(anchor.bounds, to: window)
+        }
+        overlay.close(to: newSource) { [weak self] in
+            self?.finishClose()
+        }
+    }
+
+    private func finishClose() {
+        overlay?.dismiss(animated: false)
+        overlay = nil
+        isClosing = false
+        reveal?.coversButton = false
+        if wantsPresented, !isOpening { scheduleOpen() }     // riaperto mentre si chiudeva
+    }
+
+    /// La vista del tasto sta sparendo (cambio di pagina...): niente animazioni, via subito.
+    func teardown() {
+        overlay?.dismiss(animated: false)
+        overlay = nil
+        isClosing = false
+        isOpening = false
+        reveal?.coversButton = false
+    }
+}
+
+/// Va dietro al tasto (ne ha la stessa cornice) e presenta il banner UIKit quando `isPresented` diventa true.
+private struct PickerPresenter<Panel: View>: UIViewRepresentable {
+    @Binding var isPresented: Bool
+    let reveal: PickerReveal
+    let panelWidth: CGFloat
+    let maxHeight: CGFloat
+    let panel: Panel
+
+    func makeCoordinator() -> PickerPresenterCoordinator {
+        PickerPresenterCoordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false              // i tocchi arrivano al tasto
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        let c = context.coordinator
+        c.anchor = uiView
+        c.reveal = reveal
+        c.panelWidth = panelWidth
+        c.maxHeight = maxHeight
+        c.root = AnyView(panel)
+        c.setPresented = { isPresented = $0 }
+        c.update(isPresented: isPresented)
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: PickerPresenterCoordinator) {
+        coordinator.teardown()
     }
 }

@@ -14,6 +14,9 @@ enum BackgroundStyle {
 /// Sfondo dell'app: `.black` oppure `.camouflage`.
 let appBackgroundStyle: BackgroundStyle = .camouflage
 
-/// Il banner armi si apre con la trasformazione del vetro (true) oppure con una dissolvenza (false, più leggera:
-/// è quella che non scatta). Metti true solo se vuoi riprovare la trasformazione.
-let weaponPickerMorphs = true
+/// Il banner armi si apre come il menù del filtro armi nella pagina Dati: il tasto «si allunga» e diventa il banner (true).
+/// La presentazione è una finestra UIKit trasparente con un'animazione di Core Animation, fluida come quelle di sistema
+/// (la trasformazione del vetro fatta in SwiftUI scattava). Dentro c'è il banner di sempre: loghi, cartucce, bolla di
+/// selezione, bollicine che nascondono le armi.
+/// Con false torna il popover di sistema (con la freccetta): è il ripiego se qualcosa non va.
+let weaponPickerUsesOverlay = true
