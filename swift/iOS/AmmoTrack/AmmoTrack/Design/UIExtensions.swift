@@ -11,7 +11,7 @@ import SwiftUI
 extension Provenance {
     var color: Color { self == .reloaded ? Palette.reloaded : Palette.bought }
     /// Ingranaggio per le ricaricate, carrello per le comprate.
-    var symbol: String { self == .reloaded ? "gearshape.fill" : "cart.fill" }
+    var symbol: String { self == .reloaded ? "arrow.trianglehead.2.counterclockwise.rotate.90" : "cart.fill" }
 }
 
 extension MovementKind {

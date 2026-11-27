@@ -18,7 +18,7 @@ import UIKit
 /// Alone della bolla a riposo = tinta del vetro: un grigio con una certa opacità.
 /// Grigio: 0 = nero, 1 = bianco. Opacità: 0 = trasparente (vetro pulito), 1 = pieno.
 let provenanceLensGray: CGFloat = 0.3
-let provenanceLensOpacity: CGFloat = 0.4
+let provenanceLensOpacity: CGFloat = 0.6
 
 struct ProvenanceSelector: View {
     @Binding var selection: Provenance
