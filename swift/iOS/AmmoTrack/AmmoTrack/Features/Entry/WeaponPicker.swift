@@ -269,6 +269,8 @@ struct WeaponPickerPanel: View {
     @State private var hoverKey: String? = nil
     /// Si incrementa a ogni passo di scorrimento: serve alla vibrazione.
     @State private var scrollTick = 0
+    /// Si incrementa a ogni tocco sulle bolle piccole (assorbi/espandi le armi): serve alla vibrazione.
+    @State private var toggleTick = 0
     /// Il ciclo che scorre la lista mentre la bolla è sul bordo (esiste solo durante il tocco).
     @State private var autoScroll: Task<Void, Never>? = nil
 
@@ -435,6 +437,8 @@ struct WeaponPickerPanel: View {
         .sensoryFeedback(.selection, trigger: hoverKey) { old, new in old != nil && new != nil }
         // …e a ogni passo dello scorrimento a bordo.
         .sensoryFeedback(.selection, trigger: scrollTick)
+        // …e quando tocchi una bolla piccola (assorbe o mostra le armi).
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: toggleTick)
     }
 
     @ViewBuilder
@@ -499,6 +503,7 @@ struct WeaponPickerPanel: View {
     private func toggleAbsorbed(_ id: String) {
         var set = absorbed
         if set.contains(id) { set.remove(id) } else { set.insert(id) }
+        toggleTick += 1
         withAnimation(Self.absorbAnimation) {
             collapsedRaw = set.sorted().joined(separator: ",")
         }
