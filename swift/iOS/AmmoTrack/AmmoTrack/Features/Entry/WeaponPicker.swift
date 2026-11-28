@@ -788,7 +788,9 @@ struct WeaponPickerPanel: View {
         var hidden = Set<String>()
         for (k, r) in rowFrames {
             let s = span(k, r)
-            if s.minY < topLimit || s.maxY > bottomLimit { hidden.insert(k) }
+            // Tolleranza di 1 pt: la prima voce visibile sta ESATTAMENTE sul limite alto e un errore di arrotondamento
+            // la nasconde a fotogrammi alterni durante l'animazione (il banner si accorcia e si allunga di una riga di continuo).
+            if s.minY < topLimit - 1 || s.maxY > bottomLimit + 1 { hidden.insert(k) }
         }
         // Banner così basso da non mostrare nemmeno una voce: meglio non nascondere nulla.
         if hidden.count == rowFrames.count { return ([], false, false) }
