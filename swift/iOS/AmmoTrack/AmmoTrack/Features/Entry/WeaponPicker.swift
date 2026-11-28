@@ -1239,13 +1239,11 @@ private final class PickerOverlayController: UIViewController, UIGestureRecogniz
                            options: [.beginFromCurrentState]) {
                 self.glass.frame = end
             } completion: { _ in
-                // Il tasto vero torna di colpo e il banner resta ancora un attimo sopra di lui:
-                // sono lo stesso vetro nello stesso punto, quindi non si vede nessun salto.
+                // Scambio nello stesso fotogramma: il tasto vero torna e il banner sparisce subito.
+                // Se restano insieme anche per pochi ms ci sono due vetri sovrapposti: il vetro del banner
+                // diventa grigio e rifrange il logo del tasto che gli sta sotto (il «lampeggio» alla chiusura).
                 self.reveal.coversButton = false
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(60))
-                    completion()
-                }
+                completion()
             }
             // La scritta del tasto sfuma di nuovo in cima mentre il vetro si richiude.
             try? await Task.sleep(for: .milliseconds(180))
