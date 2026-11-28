@@ -251,6 +251,19 @@ struct WeaponPickerPanel: View {
     private static var absorbAnimation: Animation {
         .spring(response: 0.42, dampingFraction: 0.86)
     }
+    /// Molla della bolla mentre il dito è giù: scivola verso il dito e lo segue.
+    private static var lensFollow: Animation {
+        .spring(response: 0.28, dampingFraction: 0.8)
+    }
+    /// Molla della bolla quando rilasci: si assesta sulla voce scelta.
+    private static var lensSettle: Animation {
+        .spring(response: 0.6, dampingFraction: 0.75)
+    }
+    /// Nessuna animazione finché le righe sono invisibili (apertura): la bolla va subito al suo posto.
+    private var lensAnimation: Animation? {
+        guard reveal.rowsVisible else { return nil }
+        return drag == nil ? Self.lensSettle : Self.lensFollow
+    }
 
     /// Come entrano ed escono le righe delle armi: sfumano in fretta e si restringono verso la riga del calibro.
     private static var absorbTransition: AnyTransition {
@@ -275,8 +288,7 @@ struct WeaponPickerPanel: View {
     @State private var topIndex = 0
     /// Altezza del puntatore mentre premi o trascini (nil = a riposo).
     /// Si azzera con una molla poco smorzata: è il rimbalzo, come in GlassSegmented.
-    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.36, dampingFraction: 0.65)))
-    private var drag: CGFloat? = nil
+    @State private var drag: CGFloat? = nil
     /// Calibro la cui bolla piccola è premuta in questo momento (nil = nessuna).
     @GestureState private var pressedToggle: String? = nil
 
@@ -292,6 +304,9 @@ struct WeaponPickerPanel: View {
     @State private var toggleTick = 0
     /// Il ciclo che scorre la lista mentre la bolla è sul bordo (esiste solo durante il tocco).
     @State private var autoScroll: Task<Void, Never>? = nil
+    /// La voce appena scelta, tenuta qui dentro: `target` arriva al banner con un ritardo e senza animazione (passa da EntryView),
+    /// quindi la bolla non scivolerebbe verso la voce nuova ma ci salterebbe.
+    @State private var chosenKey: String? = nil
 
     var body: some View {
         // Le righe si vedono un attimo dopo l'inizio dell'apertura e spariscono per prime alla chiusura:
@@ -546,10 +561,11 @@ struct WeaponPickerPanel: View {
     /// Sceglie una voce: la bolla si assesta, poi il banner si richiude (più lentamente).
        private func choose(_ t: EntryTarget) {
            let changed = t != target
+           withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) { chosenKey = key(t) }     // la bolla scivola sulla voce scelta
            if changed {
                withAnimation(.spring(response: 0.36, dampingFraction: 0.65)) { target = t }
            }
-           DispatchQueue.main.asyncAfter(deadline: .now() + (changed ? 0.30 : 0)) {
+           DispatchQueue.main.asyncAfter(deadline: .now() + (changed ? 0.55 : 0)) {
                // La chiusura (le righe sfumano, poi il banner si richiude sul tasto) la fa PickerPresenter quando isOpen diventa false.
                isOpen = false
            }
@@ -562,7 +578,7 @@ struct WeaponPickerPanel: View {
     }
 
     /// La voce su cui sta la bolla: quella scelta.
-    private var selectedKey: String { key(target) }
+    private var selectedKey: String { chosenKey ?? key(target) }
 
     /// Tutte le scelte possibili, per chiave.
     private var targets: [String: EntryTarget] {
@@ -582,19 +598,12 @@ struct WeaponPickerPanel: View {
     /// Tenendo la bolla sul bordo in basso o in alto la lista scorre (vedi `startAutoScroll`).
     private var pickGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(rowsSpace))
-            .updating($drag) { g, state, transaction in
-                // Pressione iniziata sulla bolla piccola: la bolla grande non si muove.
-                guard toggleHit(g.startLocation) == nil else { return }
-                // Al primo tocco la bolla raggiunge il punto con una molla, poi segue senza ritardo.
-                transaction.animation = (state == nil)
-                ? Animation.spring(response: 0.28, dampingFraction: 0.7) : nil
-                state = g.location.y
-            }
             .updating($pressedToggle) { g, state, _ in
                 state = toggleHit(g.startLocation)
             }
             .onChanged { g in
                 guard toggleHit(g.startLocation) == nil else { return }
+                drag = g.location.y
                 pointerRowsY = g.location.y
                 touchContentTop = contentTop
                 let k = nearestKey(toY: g.location.y)
@@ -604,6 +613,7 @@ struct WeaponPickerPanel: View {
             .onEnded { g in
                 // Il dito può essere fermo mentre la lista scorre: la posizione vera si ricava da qui.
                 let y = currentPointerY() ?? g.location.y
+                drag = nil
                 stopAutoScroll()
                 hoverKey = nil
                 pointerRowsY = nil
@@ -827,7 +837,9 @@ struct WeaponPickerPanel: View {
                                            minY: r.minY, height: r.height,
                                            wallTop: walls.top, wallBottom: walls.bottom,
                                            wallLeft: walls.left, wallRight: walls.right))
-                // Con le righe ancora invisibili (apertura) la bolla va subito al suo posto, senza scivolare.
+                .animation(lensAnimation, value: drag)
+                .animation(lensAnimation, value: selectedKey)
+            // Con le righe ancora invisibili (apertura) la bolla va subito al suo posto, senza scivolare.
                 .animation(reveal.rowsVisible ? Animation.spring(response: 0.42, dampingFraction: 0.82) : nil, value: rowFrames)
                 .opacity(lensHidden ? 0 : 1)
                 .animation(.easeOut(duration: 0.15), value: lensHidden)
